@@ -1045,7 +1045,12 @@ void Program::parseRule(std::string rule, bool rewriteMultihead) {
         }
 
         //process the body
-        std::string body = rule.substr(posEndHead + 3, std::string::npos);
+        std::string body;
+        try {
+          body = rule.substr(posEndHead + 3, std::string::npos);
+        } catch (std::out_of_range) {
+          LOG(DEBUGL) << "rule with empty body: " << rule;
+        }
         std::vector<Literal> lBody;
         while (body.size() > 0) {
             std::string bodyLiteral;
