@@ -440,7 +440,7 @@ void RuleExecutionDetails::createExecutionPlans() {
         }
 
         auto &heads = rule.getHeads();
-        if (heads.size() == 1) {
+        if (heads.size() == 1 && bodyLiterals.size() > 0) {
             RuleExecutionDetails::checkFilteringStrategy(
                     bodyLiterals[bodyLiterals.size() - 1], heads[0], p);
         }
