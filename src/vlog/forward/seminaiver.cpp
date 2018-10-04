@@ -95,7 +95,7 @@ SemiNaiver::SemiNaiver(std::vector<Rule> ruleset, EDBLayer &layer,
         int ruleid = 0;
         for (std::vector<Rule>::iterator itr = ruleset.begin(); itr != ruleset.end();
                 ++itr) {
-            RuleExecutionDetails *d = new RuleExecutionDetails(*itr, ruleid++);
+            std::unique_ptr<RuleExecutionDetails> d(new RuleExecutionDetails(*itr, ruleid++));
             std::vector<Literal> bodyLiterals = itr->getBody();
             for (std::vector<Literal>::iterator itr = bodyLiterals.begin();
                     itr != bodyLiterals.end(); ++itr) {
@@ -106,7 +106,6 @@ SemiNaiver::SemiNaiver(std::vector<Rule> ruleset, EDBLayer &layer,
                 this->allIDBRules.push_back(*d);
             else
                 this->allEDBRules.push_back(*d);
-            delete d;
         }
 
 #if 0
@@ -649,6 +648,13 @@ struct CreateParallelFirstAtom {
     }
 };
 
+void SemiNaiver::processEmptyBodyRule(std::vector<Literal> &heads,
+                                      const uint32_t iteration,
+                                      const RuleExecutionDetails &ruleDetails,
+                                      ResultJoinProcessor *joinOutput) {
+    throw 10;
+}
+
 void SemiNaiver::processRuleFirstAtom(const uint8_t nBodyLiterals,
         const Literal *bodyLiteral,
         std::vector<Literal> &heads,
@@ -926,6 +932,7 @@ bool SemiNaiver::executeRule(RuleExecutionDetails &ruleDetails,
         const uint32_t iteration,
         std::vector<ResultJoinProcessor*> *finalResultContainer) {
     Rule rule = ruleDetails.rule;
+        bool hasEmptyBody = rule.getBody().size() == 0;
 
 #ifdef WEBINTERFACE
     // Cannot run multithreaded in this case.
@@ -984,7 +991,9 @@ bool SemiNaiver::executeRule(RuleExecutionDetails &ruleDetails,
         }
 
         //Reorder the list of atoms depending on the observed cardinalities
-        reorderPlan(plan, cards, heads);
+        if (!hasEmptyBody) {
+            reorderPlan(plan, cards, heads);
+        }
 
 #ifdef DEBUG
         std::string listLiterals = "EXEC COMB: ";
@@ -1002,6 +1011,25 @@ bool SemiNaiver::executeRule(RuleExecutionDetails &ruleDetails,
         int optimalOrderIdx = 0;
 
         bool first = true;
+
+        if (hasEmptyBody) {
+            std::vector<std::pair<uint8_t, uint8_t>> pos;
+            ResultJoinProcessor *joinOutput = new ExistentialRuleProcessor(
+                pos, pos,
+                listDerivations,
+                heads, &ruleDetails,
+                0, iteration,
+                finalResultContainer == NULL,
+                1,
+                this,
+                chaseMgmt);
+
+            processEmptyBodyRule(heads,
+                                 iteration,
+                                 ruleDetails,
+                                 joinOutput);
+        }
+
         while (optimalOrderIdx < nBodyLiterals) {
             const Literal *bodyLiteral = plan.plan[optimalOrderIdx];
 
