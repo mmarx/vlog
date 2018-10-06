@@ -85,8 +85,8 @@ SemiNaiver::SemiNaiver(std::vector<Rule> ruleset, EDBLayer &layer,
     running(false),
     layer(layer),
     program(program),
-    nthreads(nthreads) {
-
+    nthreads(nthreads),
+    dummyTable(std::make_shared<SingletonTable>(iteration)) {
         TableFilterer::setOptIntersect(opt_intersect);
         memset(predicatesTables, 0, sizeof(TupleTable*)*MAX_NPREDS);
 
@@ -648,13 +648,6 @@ struct CreateParallelFirstAtom {
     }
 };
 
-void SemiNaiver::processEmptyBodyRule(std::vector<Literal> &heads,
-                                      const uint32_t iteration,
-                                      const RuleExecutionDetails &ruleDetails,
-                                      ResultJoinProcessor *joinOutput) {
-    throw 10;
-}
-
 void SemiNaiver::processRuleFirstAtom(const uint8_t nBodyLiterals,
         const Literal *bodyLiteral,
         std::vector<Literal> &heads,
@@ -669,18 +662,24 @@ void SemiNaiver::processRuleFirstAtom(const uint8_t nBodyLiterals,
         ResultJoinProcessor *joinOutput) {
     //If the rule has only one body literal, has the same bindings list of the head,
     //and the current head relation is empty, then I can simply copy the table
-    FCIterator literalItr = getTable(*bodyLiteral, min, max);
+    FCIterator literalItr;
+    bool emptyBody = nBodyLiterals == 0;
     TableFilterer queryFilterer(this);
-    if (bodyLiteral->getPredicate().getType() == IDB) {
-        processedTables += literalItr.getNTables();
+
+    if (!emptyBody) {
+        literalItr = getTable(*bodyLiteral, min, max);
+        if (bodyLiteral->getPredicate().getType() == IDB) {
+            processedTables += literalItr.getNTables();
+        }
     }
+
     Literal &firstHeadLiteral = heads[0];
     auto idHeadPredicate = firstHeadLiteral.getPredicate().getId();
     FCTable *firstEndTable = getTable(idHeadPredicate, firstHeadLiteral.
             getPredicate().getCardinality());
 
     //Can I copy the table in the body as is?
-    bool rawCopy = lastLiteral && heads.size() == 1 && literalItr.getNTables() == 1;
+    bool rawCopy = !emptyBody && lastLiteral && heads.size() == 1 && literalItr.getNTables() == 1;
     if (rawCopy) {
         rawCopy &= firstEndTable->isEmpty() &&
             firstEndTable->getSizeRow() == literalItr.getCurrentTable()->getRowSize() &&
@@ -747,8 +746,9 @@ void SemiNaiver::processRuleFirstAtom(const uint8_t nBodyLiterals,
             && firstHeadLiteral.getNUniqueVars() == bodyLiteral->getNUniqueVars()
             && (!lastLiteral || firstEndTable->isEmpty());
 
-        while (!literalItr.isEmpty()) {
-            std::shared_ptr<const FCInternalTable> table = literalItr.getCurrentTable();
+        while (emptyBody || !literalItr.isEmpty()) {
+            std::shared_ptr<const FCInternalTable> table = emptyBody ? dummyTable
+                : literalItr.getCurrentTable();
             LOG(DEBUGL) << "Creating iterator";
             FCInternalTableItr *interitr = table->getIterator();
             std::pair<uint8_t, uint8_t> *fv = NULL;
@@ -826,6 +826,10 @@ void SemiNaiver::processRuleFirstAtom(const uint8_t nBodyLiterals,
             LOG(DEBUGL) << "Releasing iterator";
             table->releaseIterator(interitr);
             literalItr.moveNextCount();
+
+            if (emptyBody) {
+                break;
+            }
         }
     }
 }
@@ -932,7 +936,7 @@ bool SemiNaiver::executeRule(RuleExecutionDetails &ruleDetails,
         const uint32_t iteration,
         std::vector<ResultJoinProcessor*> *finalResultContainer) {
     Rule rule = ruleDetails.rule;
-        bool hasEmptyBody = rule.getBody().size() == 0;
+        bool emptyBody = rule.getBody().size() == 0;
 
 #ifdef WEBINTERFACE
     // Cannot run multithreaded in this case.
@@ -991,7 +995,7 @@ bool SemiNaiver::executeRule(RuleExecutionDetails &ruleDetails,
         }
 
         //Reorder the list of atoms depending on the observed cardinalities
-        if (!hasEmptyBody) {
+        if (!emptyBody) {
             reorderPlan(plan, cards, heads);
         }
 
@@ -1012,26 +1016,9 @@ bool SemiNaiver::executeRule(RuleExecutionDetails &ruleDetails,
 
         bool first = true;
 
-        if (hasEmptyBody) {
-            std::vector<std::pair<uint8_t, uint8_t>> pos;
-            ResultJoinProcessor *joinOutput = new ExistentialRuleProcessor(
-                pos, pos,
-                listDerivations,
-                heads, &ruleDetails,
-                0, iteration,
-                finalResultContainer == NULL,
-                1,
-                this,
-                chaseMgmt);
-
-            processEmptyBodyRule(heads,
-                                 iteration,
-                                 ruleDetails,
-                                 joinOutput);
-        }
-
-        while (optimalOrderIdx < nBodyLiterals) {
-            const Literal *bodyLiteral = plan.plan[optimalOrderIdx];
+        while (emptyBody || optimalOrderIdx < nBodyLiterals) {
+            const Literal *bodyLiteral = (emptyBody ? nullptr
+                                          : plan.plan[optimalOrderIdx]);
 
             //This data structure is used to filter out rows where different columns
             //lead to the same derivation
@@ -1050,7 +1037,7 @@ bool SemiNaiver::executeRule(RuleExecutionDetails &ruleDetails,
             //BEGIN -- Determine where to put the results of the query
             ResultJoinProcessor *joinOutput = NULL;
             const bool lastLiteral = optimalOrderIdx == (nBodyLiterals - 1);
-            if (!lastLiteral) {
+            if (!lastLiteral && !emptyBody) {
                 joinOutput = new InterTableJoinProcessor(
                         plan.sizeOutputRelation[optimalOrderIdx],
                         plan.posFromFirst[optimalOrderIdx],
@@ -1058,9 +1045,10 @@ bool SemiNaiver::executeRule(RuleExecutionDetails &ruleDetails,
                         ! multithreaded ? -1 : nthreads);
             } else {
                 if (ruleDetails.rule.isExistential()) {
+                    std::vector<std::pair<uint8_t, uint8_t>> dummyPositions;
                     joinOutput = new ExistentialRuleProcessor(
-                            plan.posFromFirst[optimalOrderIdx],
-                            plan.posFromSecond[optimalOrderIdx],
+                            emptyBody ? dummyPositions : plan.posFromFirst[optimalOrderIdx],
+                            emptyBody ? dummyPositions : plan.posFromSecond[optimalOrderIdx],
                             listDerivations,
                             heads, &ruleDetails,
                             (uint8_t) orderExecution, iteration,
@@ -1099,18 +1087,20 @@ bool SemiNaiver::executeRule(RuleExecutionDetails &ruleDetails,
             //END --  Determine where to put the results of the query
 
             //Calculate range for the retrieval of the triples
-            size_t min = plan.ranges[optimalOrderIdx].first;
-            size_t max = plan.ranges[optimalOrderIdx].second;
+            size_t min = emptyBody ? 1 : plan.ranges[optimalOrderIdx].first;
+            size_t max = emptyBody ? 1 : plan.ranges[optimalOrderIdx].second;
             if (min == 1)
                 min = ruleDetails.lastExecution;
             if (max == 1)
                 max = ruleDetails.lastExecution - 1;
-            LOG(DEBUGL) << "Evaluating atom " << optimalOrderIdx << " " << bodyLiteral->tostring() <<
-                " min=" << min << " max=" << max;
+            if (!emptyBody) {
+                LOG(DEBUGL) << "Evaluating atom " << optimalOrderIdx << " " << bodyLiteral->tostring() <<
+                    " min=" << min << " max=" << max;
+            }
 
             if (first) {
                 std::chrono::system_clock::time_point startFirstA = std::chrono::system_clock::now();
-                if (lastLiteral || bodyLiteral->getNVars() > 0) {
+                if (lastLiteral || emptyBody || bodyLiteral->getNVars() > 0) {
                     processRuleFirstAtom(nBodyLiterals, bodyLiteral,
                             heads, min, max, processedTables,
                             lastLiteral,
@@ -1151,7 +1141,7 @@ bool SemiNaiver::executeRule(RuleExecutionDetails &ruleDetails,
             }
 
             //Prepare for the processing of the next atom (if any)
-            if (!lastLiteral && ! first) {
+            if (!emptyBody && !lastLiteral && ! first) {
                 currentResults = ((InterTableJoinProcessor*)joinOutput)->getTable();
             }
             if (lastLiteral && finalResultContainer) {

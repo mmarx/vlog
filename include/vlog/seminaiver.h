@@ -80,11 +80,6 @@ class SemiNaiver {
                 const RuleExecutionPlan &plan,
                 std::vector<size_t> &cards);
 
-        void processEmptyBodyRule(std::vector<Literal> &heads,
-                                  const uint32_t iteration,
-                                  const RuleExecutionDetails &ruleDetails,
-                                  ResultJoinProcessor *joinOutput);
-
         void processRuleFirstAtom(const uint8_t nBodyLiterals,
                 const Literal *bodyLiteral,
                 std::vector<Literal> &heads,
@@ -117,6 +112,7 @@ class SemiNaiver {
                 const size_t maxIteration);
 
     protected:
+        std::shared_ptr<FCInternalTable> dummyTable;
         FCTable *predicatesTables[MAX_NPREDS];
         EDBLayer &layer;
         Program *program;
