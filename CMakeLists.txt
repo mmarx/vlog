@@ -260,3 +260,8 @@ if(JAVA)
     add_dependencies(jvlog vlog-java)
 ENDIF()
 TARGET_LINK_LIBRARIES(vlog vlog-core)
+
+add_library(api src/vlog/api.cpp)
+target_link_libraries(api vlog-core)
+add_executable(e01 src/apiexamples/01.cpp)
+target_link_libraries(e01 api)
