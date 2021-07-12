@@ -17,6 +17,7 @@
 
 #include <vector>
 #include <map>
+#include <memory>
 
 //Datatype is set in the most significant three bits
 #define IS_NUMBER(x) ((x) >> 61)
@@ -132,12 +133,17 @@ class EDBLayer {
             uint8_t arity;
             std::string type;
             std::shared_ptr<EDBTable> manager;
+
+            std::string toString() {
+                return "PredId_t: " + std::to_string(id) + ", arity: " + std::to_string(arity) + ", type: " + type + ", manager:...";
+            }
         };
 
         const EDBConf &conf;
         bool loadAllData;
 
         std::shared_ptr<Dictionary> predDictionary; //std::string, Term_t
+
         std::map<PredId_t, EDBInfoTable> dbPredicates;
 
         Factory<EDBMemIterator> memItrFactory;
@@ -245,6 +251,16 @@ class EDBLayer {
         std::vector<PredId_t> getAllEDBPredicates();
 
         std::vector<PredId_t> getAllPredicateIDs() const;
+    void log(){
+        LOG(INFOL) << "Logging EDBLayer.dbPredicates start";
+        std::map<PredId_t, EDBInfoTable>::iterator iter = dbPredicates.begin();
+        while (iter != dbPredicates.end()) {
+            LOG(INFOL) << "    predId_t: " << iter->first;
+            LOG(INFOL) << "    EDBInfoTable: " << iter->second.toString();
+            iter++;
+        }
+        LOG(INFOL) << "Logging EDBLayer.dbPredicates end";
+    }
 
         VLIBEXP uint64_t getPredSize(PredId_t id) const;
 

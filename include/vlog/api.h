@@ -23,19 +23,26 @@
 #ifndef VLOGAPI_API_H
 #define VLOGAPI_API_H
 
+
 class API {
 private:
     SemiNaiver *sn;
     Program *program;
     EDBLayer *layer;
+    Literal getVLogLiteral(std::string literal);
+    VTerm getVLogTerm(std::string literal, Dictionary &variables);
 public:
     void addRule(std::string rule);
     void addFacts(std::string predicate, std::vector<std::vector<std::string>> data);
     void materialize(bool skolem = false, unsigned long timeout = 0);
-    long extensionsize(std::string predicate);
+    void logEDBLayer();
+    std::vector<std::vector<std::string>> query(std::string query);
     API();
     ~API();
 };
+
+std::string getPredicateFromLiteral(std::string literal);
+std::vector<std::string> getTermsFromLiteral(std::string literal);
 
 #endif //VLOGAPI_API_H
 

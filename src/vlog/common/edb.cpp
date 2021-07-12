@@ -118,6 +118,7 @@ void EDBLayer::addMDLiteTable(const EDBConf::Table &tableConf) {
 #endif
 
 void EDBLayer::addInmemoryTable(const EDBConf::Table &tableConf) {
+    LOG(INFOL) << "Larry: EDBLayer::addInmemoryTable: start (const EDBConf::Table)";
     EDBInfoTable infot;
     const std::string pn = tableConf.predname;
     infot.id = (PredId_t) predDictionary->getOrAdd(pn);
@@ -140,6 +141,7 @@ void EDBLayer::addInmemoryTable(const EDBConf::Table &tableConf) {
     }
     infot.manager = std::shared_ptr<EDBTable>(table);
     infot.arity = table->getArity();
+
     dbPredicates.insert(make_pair(infot.id, infot));
 
     LOG(DEBUGL) << "Imported InmemoryTable " << pn << " id " << infot.id << " size " << table->getSize();
@@ -152,6 +154,7 @@ void EDBLayer::addInmemoryTable(std::string predicate, std::vector<std::vector<s
 }
 
 void EDBLayer::addInmemoryTable(std::string predicate, PredId_t id, std::vector<std::vector<std::string>> &rows) {
+    LOG(INFOL) << "Larry: EDBLayer::addInmemoryTable: start (std::string, PredId_t, std::vector<std::vector<std::string>>)";
     EDBInfoTable infot;
     infot.id = id;
     if (doesPredExists(infot.id)) {
@@ -162,7 +165,7 @@ void EDBLayer::addInmemoryTable(std::string predicate, PredId_t id, std::vector<
     InmemoryTable *table = new InmemoryTable(infot.id, rows, this);
     infot.arity = table->getArity();
     infot.manager = std::shared_ptr<EDBTable>(table);
-    dbPredicates.insert(make_pair(infot.id, infot));
+    dbPredicates.insert(std::make_pair(infot.id, infot));
     LOG(DEBUGL) << "Added table for " << predicate << ":" << infot.id << ", arity = " << (int) table->getArity() << ", size = " << table->getSize();
     //LOG(INFOL) << "Imported InmemoryTable id " << infot.id << " predicate " << predicate;
     // table->dump(std::cerr);
@@ -171,6 +174,7 @@ void EDBLayer::addInmemoryTable(std::string predicate, PredId_t id, std::vector<
 void EDBLayer::addInmemoryTable(PredId_t id,
         uint8_t arity,
         std::vector<uint64_t> &rows) {
+    LOG(INFOL) << "Larry: EDBLayer::addInmemoryTable: start (PredId_t, uint8_t, std::vector<uint64_t>)";
     EDBInfoTable infot;
     infot.id = id;
     if (doesPredExists(infot.id)) {
@@ -181,7 +185,8 @@ void EDBLayer::addInmemoryTable(PredId_t id,
     InmemoryTable *table = new InmemoryTable(infot.id, arity, rows, this);
     infot.arity = table->getArity();
     infot.manager = std::shared_ptr<EDBTable>(table);
-    dbPredicates.insert(make_pair(infot.id, infot));
+    dbPredicates.insert(std::make_pair(infot.id, infot));
+    LOG(INFOL) << "Larry: EDBLayer::addInmemoryTable: end";
 }
 
 #ifdef SPARQL
@@ -1034,11 +1039,14 @@ bool EDBLayer::getOrAddDictNumber(const char *text, const size_t sizeText,
         sz -= 43;
     }
     if (dbPredicates.size() > 0) {
+//        LOG(ERRORL) << "Larry: EDBLayer::getOrAddDictNumber: if 1";
         resp = dbPredicates.begin()->second.manager->
             getDictNumber(text, sz, id);
     }
     if (!resp) {
+//        LOG(ERRORL) << "Larry: EDBLayer::getOrAddDictNumber: if 2";
         if (!termsDictionary.get()) {
+//            LOG(ERRORL) << "Larry: EDBLayer::getOrAddDictNumber: if 2.1";
             LOG(DEBUGL) << "The additional terms will start from " << getNTerms();
             termsDictionary = std::shared_ptr<Dictionary>(
                     new Dictionary(getNTerms()));
@@ -1048,6 +1056,8 @@ bool EDBLayer::getOrAddDictNumber(const char *text, const size_t sizeText,
         LOG(TRACEL) << "getOrAddDictNumber \"" << t << "\" returns " << id;
         resp = true;
     }
+//    LOG(ERRORL) << "Larry: EDBLayer::getOrAddDictNumber: resp: " << std::to_string(resp);
+//    LOG(ERRORL) << "Larry: EDBLayer::getOrAddDictNumber: end";
     return resp;
 }
 
@@ -1155,6 +1165,7 @@ uint8_t EDBLayer::getPredArity(PredId_t id) const {
     if (dbPredicates.count(id)) {
         return dbPredicates.at(id).arity;
     }
+    LOG(INFOL) << "Larry: EDBLayer::getPredArity: return 0";
     return 0;
 }
 
