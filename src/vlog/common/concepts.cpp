@@ -922,6 +922,7 @@ std::string Program::rewriteRDFOWLConstants(std::string input) {
 }
 
 Literal Program::parseLiteral(std::string l, Dictionary &dictVariables) {
+    LOG(INFOL) << "Larry: Program::parseLiteral: literal:" + l;
     size_t posBeginTuple = l.find("(");
     bool negated = false;
     if (posBeginTuple == std::string::npos) {
@@ -1052,6 +1053,7 @@ Literal Program::parseLiteral(std::string l, Dictionary &dictVariables) {
 
     //Determine predicate
     PredId_t predid = (PredId_t) dictPredicates.getOrAdd(predicate);
+    LOG(INFOL) << "Larry: Program::parseLiteral: predid: " +std::to_string(predid);
     if (cardPredicates.find(predid) == cardPredicates.end()) {
         cardPredicates.insert(std::make_pair(predid, t.size()));
     } else {
@@ -1064,20 +1066,29 @@ Literal Program::parseLiteral(std::string l, Dictionary &dictVariables) {
             throw ("Wrong arity in predicate \""+ predicate + "\". It should be " + std::to_string((int) cardPredicates.find(predid)->second) +".");
         }
     }
+    //kb->log();
     Predicate pred(predid, Predicate::calculateAdornment(t1), kb->doesPredExists(predid) ? EDB : IDB, (uint8_t) t.size());
+
+    LOG(INFOL) << "Larry: Predicate: " << predicate << ", id = " << predid << "type = " << ((pred.getType() == EDB) ? "EDB" : "IDB");
     LOG(DEBUGL) << "Predicate : " << predicate << ", type = " << ((pred.getType() == EDB) ? "EDB" : "IDB");
     if (pred.getType() == EDB) {
+        LOG(INFOL) << "Larry: Program::parseLiteral: computing sz";
         int sz = kb->getPredArity(predid);
+        LOG(INFOL) << "Larry: Program::parseLiteral: if sz";
         if (sz == 0) {
             if (t.size() != 0) {
                 kb->setPredArity(predid, t.size());
             }
         } else if (sz != t.size()) {
-            throw ("Wrong arity in predicate \""+ predicate + "\". It should be " + std::to_string((int) cardPredicates.find(predid)->second) +".");
+            LOG(INFOL) << "Larry: Program::parseLiteral: case 2: sz: " << sz << ", t.size(): " << t.size() << ", predicate: " << predicate << ", cardPredicates.find(predid): " << cardPredicates.find(predid)->second;
+            std::string error = "Wrong arity in predicate \""+ predicate + "\". It should be " + std::to_string((int) cardPredicates.find(predid)->second) + ".";
+            LOG(ERRORL) << error;
+            throw error;
         }
     }
 
     Literal literal(pred, t1, negated);
+    LOG(INFOL) << "Larry: Program::parseLiteral: end";
     return literal;
 }
 
@@ -1245,6 +1256,7 @@ std::string Program::parseRule(std::string rule, bool rewriteMultihead) {
         }
 
         //Add the rule
+        LOG(INFOL) << "Larry: Program::parseRule: adding rule: " << rule;
         addRule(lHeads, lBody, rewriteMultihead);
         return "";
     } catch (std::string e) {

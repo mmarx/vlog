@@ -1662,6 +1662,7 @@ FCIterator SemiNaiver::getTable(const Literal & literal,
     //BEGIN -- Get the table that correspond to the current literal
     //std::chrono::system_clock::time_point start = std::chrono::system_clock::now();
     if (literal.getPredicate().getType() == EDB) {
+        LOG(INFOL) << "Larry: SemiNaiver::getTable: returning getTableFromEDBLayer";
         return getTableFromEDBLayer(literal);
     } else {
         /*if (currentIDBpred == 0) {
@@ -1675,6 +1676,7 @@ FCIterator SemiNaiver::getTable(const Literal & literal,
           }
           }
           currentIDBpred++;*/
+        LOG(INFOL) << "Larry: SemiNaiver::getTable: returning getTableFromIDBLayer";
         return getTableFromIDBLayer(literal, min, max, filter);
     }
     //std::chrono::duration<double> sec = std::chrono::system_clock::now() - start;
@@ -1684,9 +1686,12 @@ FCIterator SemiNaiver::getTable(const Literal & literal,
 }
 
 FCIterator SemiNaiver::getTable(const PredId_t predid) {
+    LOG(INFOL) << "Larry: SemiNaiver::getTable(predid = " << predid << ")";
     if (predicatesTables[predid] == NULL) {
+        LOG(INFOL) << "Larry: SemiNaiver::getTable: returning empty FCIterator";
         return FCIterator();
     }
+    LOG(INFOL) << "Larry: SemiNaiver::getTable: returning predicatesTables[predid]->read(0)";
     return predicatesTables[predid]->read(0);
 }
 
