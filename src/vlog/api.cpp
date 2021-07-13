@@ -101,9 +101,17 @@ std::vector<std::vector<std::string>> API::query(std::string query) {
         log("  API:query: iterating ...");
         iter -> next();
         std::vector<std::string> row;
-        for (uint8_t i = 0; i< iter->getTupleSize(); i++)
-            row.push_back(layer->getDictText(iter->getElementAt(i)));
-        result.push_back(row); //!!! does not work either
+        for (uint8_t i = 0; i< iter->getTupleSize(); i++){
+            std::string value = layer->getDictText(iter->getElementAt(i));
+            if (value == ""){
+                //uint64_t v = iitr->getCurrentValue(m);
+                uint64_t v = iter->getElementAt(i);
+                value = "_:" + std::to_string(v >> 40) + "_" + std::to_string((v >> 32) & 0377) + "_" + std::to_string(v & 0xffffffff);
+            }
+            row.push_back(value);
+        }
+
+        result.push_back(row);
     }
     log("  API::query: end");
     return result;
