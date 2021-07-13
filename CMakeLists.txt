@@ -264,12 +264,6 @@ TARGET_LINK_LIBRARIES(vlog vlog-core)
 add_library(api src/vlog/api.cpp)
 target_link_libraries(api vlog-core)
 
-add_executable(e01 src/apiexamples/01.cpp)
-target_link_libraries(e01 api)
-#
-# Let `experiment01.cpp` be the code file that executes a new experiment using VLog's API.
-# Let `src/apiexamples/` be the location of `experiment01.cpp`.
-# Let `experiment01` be the name of the desired executable.
-# Then add the next two lines to this file (without the "`")
-# `add_executable(experiment01 src/apiexamples/experiment01.cpp)`
-# `target_link_libraries(experiment01 api)`
+add_executable(exp01 src/apiexamples/exp01.cpp)
+target_link_libraries(exp01 api)
+
