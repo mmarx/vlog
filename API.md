@@ -15,7 +15,7 @@ Please note that we have modified current VLog's project and add an API on top o
 ## Example
 
 ### code
-We include one simple example that shows how to use this API. Please check the file `src/apiexamples/01.cpp`.
+We include one simple example that shows how to use this API. Please check the file `src/apiexamples/exp01.cpp`.
 
 ### compilation
 Let `src/apiexamples/exp02.cpp` be the relative path of a code that uses VLog's API. It is necessary to add the following two lines at the end of the `CMakeLists.txt` file:
