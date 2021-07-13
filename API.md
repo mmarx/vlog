@@ -34,5 +34,5 @@ To execute the experiment, run
 
 -----
 Please note that:
-* We have modified current VLog's project (v1.3.5) and add an API on top of it. 
-* When we compile the project second time, only the new experiment is built
+* We have modified current VLog's master project (commit e0105a3) and add an API on top of it.
+* When we compile the project  after adding some experiments, only the new experiments are built
