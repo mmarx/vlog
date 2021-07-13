@@ -10,8 +10,6 @@ cmake ..
 make -j
 ```
 
-Please note that we have modified current VLog's project and add an API on top of it.
-
 ## Example
 
 ### code
@@ -34,5 +32,7 @@ To execute the experiment, run
 ./exp02
 ```
 
-Note that:
+-----
+Please note that:
+* We have modified current VLog's project (v1.3.5) and add an API on top of it. 
 * When we compile the project second time, only the new experiment is built
