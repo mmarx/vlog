@@ -128,7 +128,8 @@ void SingleHeadFinalRuleProcessor::processResults(const int blockid, const Term_
     processResults(blockid, unique, NULL);
 }
 
-void SingleHeadFinalRuleProcessor::processResults(const int blockid, FCInternalTableItr *first,
+void SingleHeadFinalRuleProcessor::processResults(const int blockid,
+        FCInternalTableItr *first,
         FCInternalTableItr* second, const bool unique) {
     for (uint32_t i = 0; i < nCopyFromFirst; ++i) {
         row[posFromFirst[i].first] = first->getCurrentValue(posFromFirst[i].second);
@@ -136,7 +137,6 @@ void SingleHeadFinalRuleProcessor::processResults(const int blockid, FCInternalT
     for (uint32_t i = 0; i < nCopyFromSecond; ++i) {
         row[posFromSecond[i].first] = second->getCurrentValue(posFromSecond[i].second);
     }
-
     processResults(blockid, unique || ignoreDupElimin, NULL);
 }
 
@@ -500,11 +500,11 @@ void SingleHeadFinalRuleProcessor::consolidateSegment(std::shared_ptr<const Segm
             iteration, true, nthreads);
 }
 
-void SingleHeadFinalRuleProcessor::consolidate(const bool isFinished,
+bool SingleHeadFinalRuleProcessor::consolidate(const bool isFinished,
         const bool forceCheck) {
     if (!addToEndTable) {
         //do nothing. We'll consolidate later on.
-        return;
+        return false;
     }
 
     /*
@@ -518,13 +518,15 @@ void SingleHeadFinalRuleProcessor::consolidate(const bool isFinished,
         for (int i = 0; i < nbuffers; ++i) {
             if (utmpt[i] != NULL && !utmpt[i]->isEmpty()) {
                 if (forceCheck) {
-                    //Even though this data should be original, I still check to make sure there are no duplicates
+                    //Even though this data should be original,
+                    //I still check to make sure there are no duplicates
                     std::shared_ptr<const Segment> seg;
                     if (!utmpt[i]->isSorted()) {
                         seg = utmpt[i]->getSegment()->sortBy(NULL);
                     } else {
                         seg = utmpt[i]->getSegment();
                     }
+                    triggers += utmpt[i]->getNRows();
                     seg = t->retainFrom(seg, false, nthreads);
                     if (!seg->isEmpty()) {
                         std::shared_ptr<const FCInternalTable> ptrTable(
@@ -532,75 +534,33 @@ void SingleHeadFinalRuleProcessor::consolidate(const bool isFinished,
                                     iteration,
                                     true,
                                     seg));
-                        t->add(ptrTable, literal, posLiteralInRule, ruleDetails, ruleExecOrder,
+                        t->add(ptrTable, literal, posLiteralInRule, ruleDetails,
+                                ruleExecOrder,
                                 iteration, isFinished, nthreads);
-#if 0
-                        FCInternalTableItr *test = ptrTable->getIterator();
-                        int ncols = test->getNColumns();
-                        while (test->hasNext()) {
-                            test->next();
-                            std::string s = "";
-                            for (int i = 0; i < ncols; i++) {
-                                Term_t t = test->getCurrentValue(i);
-                                if (i > 0) {
-                                    s += ", ";
-                                }
-                                s += std::to_string(t);
-                            }
-                            LOG(DEBUGL) << "Tuple (utmpt, forcecheck): <" << s << ">";
-                        }
-                        ptrTable->releaseIterator(test);
-#endif
                     }
-
                 } else {
                     if (!utmpt[i]->isSorted()) {
+                        triggers += utmpt[i]->getNRows();
                         std::shared_ptr<const Segment> sortedSegment;
                         if (nthreads == -1)
                             sortedSegment = utmpt[i]->getSegment()->sortBy(NULL);
                         else
-                            sortedSegment = utmpt[i]->getSegment()->sortBy(NULL, nthreads, false);
-
-                        std::shared_ptr<const FCInternalTable> ptrTable(new InmemoryFCInternalTable(rowsize, iteration, true, sortedSegment));
-#if 0
-                        FCInternalTableItr *test = ptrTable->getIterator();
-                        int ncols = test->getNColumns();
-                        while (test->hasNext()) {
-                            test->next();
-                            std::string s = "";
-                            for (int i = 0; i < ncols; i++) {
-                                Term_t t = test->getCurrentValue(i);
-                                if (i > 0) {
-                                    s += ", ";
-                                }
-                                s += std::to_string(t);
-                            }
-                            LOG(DEBUGL) << "Tuple(utmpt, noforcecheck, not sorted): <" << s << ">";
-                        }
-                        ptrTable->releaseIterator(test);
-#endif
+                            sortedSegment = utmpt[i]->getSegment()->sortBy(
+                                    NULL, nthreads, false);
+                        std::shared_ptr<const FCInternalTable> ptrTable(
+                                new InmemoryFCInternalTable(rowsize, iteration,
+                                    true, sortedSegment));
                         t->add(ptrTable, literal, posLiteralInRule,
-                                ruleDetails, ruleExecOrder, iteration, isFinished, nthreads);
+                                ruleDetails, ruleExecOrder, iteration, isFinished,
+                                nthreads);
                     } else {
-                        std::shared_ptr<const FCInternalTable> ptrTable(new InmemoryFCInternalTable(rowsize, iteration, true, utmpt[i]->getSegment()));
-#if 0
-                        FCInternalTableItr *test = ptrTable->getIterator();
-                        int ncols = test->getNColumns();
-                        while (test->hasNext()) {
-                            test->next();
-                            std::string s = "";
-                            for (int i = 0; i < ncols; i++) {
-                                Term_t t = test->getCurrentValue(i);
-                                if (i > 0) {
-                                    s += ", ";
-                                }
-                                s += std::to_string(t);
-                            }
-                            LOG(DEBUGL) << "Tuple(utmpt, noforcecheck, sorted): <" << s << ">";
-                        }
-                        ptrTable->releaseIterator(test);
-#endif
-                        t->add(ptrTable, literal, posLiteralInRule, ruleDetails, ruleExecOrder, iteration, isFinished, nthreads);
+                        triggers += utmpt[i]->getNRows();
+                        std::shared_ptr<const FCInternalTable> ptrTable(
+                                new InmemoryFCInternalTable(rowsize,
+                                    iteration, true, utmpt[i]->getSegment()));
+                        t->add(ptrTable, literal,
+                                posLiteralInRule, ruleDetails, ruleExecOrder,
+                                iteration, isFinished, nthreads);
                     }
                 }
 
@@ -614,6 +574,7 @@ void SingleHeadFinalRuleProcessor::consolidate(const bool isFinished,
         for (int i = 0; i < nbuffers; ++i) {
             if (tmpt[i] != NULL && !tmpt[i]->isEmpty()) {
                 std::shared_ptr<const Segment> seg;
+                triggers += tmpt[i]->getNRows();
                 LOG(DEBUGL) << "getSortedAndUnique ...";
                 seg = tmpt[i]->getSortedAndUniqueSegment(nthreads);
                 LOG(DEBUGL) << "getSortedAndUnique done";
@@ -663,8 +624,9 @@ void SingleHeadFinalRuleProcessor::consolidate(const bool isFinished,
         }
     }
 
-    if (!t->isEmpty(iteration))
+    if (!t->isEmpty(iteration)) {
         newDerivation = true;
+    }
 
 #ifdef WEBINTERFACE
     //Add the block just created to the global list of derivations
@@ -683,6 +645,7 @@ void SingleHeadFinalRuleProcessor::consolidate(const bool isFinished,
         }
     }
 #endif
+    return newDerivation;
 }
 
 std::vector<std::shared_ptr<const Segment>> SingleHeadFinalRuleProcessor::getAllSegments() {
@@ -888,10 +851,10 @@ void FinalRuleProcessor::addColumns(const int blockid,
         const bool unique, const bool sorted) {
     size_t offset = 0;
     for(auto &t : atomTables) {
-	size_t newOffset = offset + t->getRowSize();
-	std::vector<std::shared_ptr<Column>> c(columns.begin() + offset, columns.begin() + newOffset);
+        size_t newOffset = offset + t->getRowSize();
+        std::vector<std::shared_ptr<Column>> c(columns.begin() + offset, columns.begin() + newOffset);
         t->addColumns(blockid, c, unique, sorted);
-	offset = newOffset;
+        offset = newOffset;
     }
 }
 
@@ -919,12 +882,14 @@ bool FinalRuleProcessor::isBlockEmpty(const int blockId, const bool unique) cons
     return out;
 }
 
-void FinalRuleProcessor::consolidate(const bool isFinished) {
+bool FinalRuleProcessor::consolidate(const bool isFinished) {
     if (!addToEndTable) {
         //do nothing. We'll consolidate later on.
-        return;
+        return false;
     }
+    bool out = false;
     for(auto &t : atomTables) {
-        t->consolidate(isFinished);
+        out |= t->consolidate(isFinished);
     }
+    return out;
 }

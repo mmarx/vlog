@@ -12,11 +12,23 @@
 #include <trident/kb/querier.h>
 
 #include <trident/sparql/query.h>
+#include <vector>
 
 #define QUERY_MAT 0
 #define QUERY_ONDEM 1
 
 typedef enum {TOPDOWN, MAGIC} ReasoningMode;
+
+struct Metrics {
+    size_t estimate;
+    size_t intermediateResults;
+    int countIntermediateQueries;
+    double cost;
+    int countRules;
+    int countUniqueRules;
+    int countIDBPredicates;
+    uint8_t boundedness;
+};
 
 class Reasoner {
     private:
@@ -51,6 +63,15 @@ class Reasoner {
         size_t estimate(Literal &query, std::vector<uint8_t> *posBindings,
                 std::vector<Term_t> *valueBindings, EDBLayer &layer,
                 Program &program);
+
+        void getMetrics(Literal &query,
+                std::vector<uint8_t> *posBindings,
+                std::vector<Term_t> *valueBindings,
+                EDBLayer &layer,
+                Program &program,
+                Metrics &metrics,
+                int maxDepth,
+                string& idbFeatures);
 
         VLIBEXP ReasoningMode chooseMostEfficientAlgo(Literal &query,
                 EDBLayer &layer, Program &program,
@@ -97,20 +118,19 @@ class Reasoner {
                 bool returnOnlyVars,
                 std::vector<uint8_t> *sortByFields);
 
-        //static std::shared_ptr<SemiNaiver> fullMaterialization(EDBLayer &layer,
-        //        Program *p, bool opt_intersect, bool opt_filtering, bool opt_threaded,
-        //        bool restrictedChase, int nthreads, int interRuleThreads, bool shuffleRules);
-
         VLIBEXP static std::shared_ptr<SemiNaiver> getSemiNaiver(EDBLayer &layer,
                 Program *p, bool opt_intersect, bool opt_filtering, bool opt_threaded,
                 TypeChase typeChase,
-                int nthreads, int interRuleThreads, bool shuffleRules, Program *RMFC_check = NULL);
+                int nthreads, int interRuleThreads, bool shuffleRules,
+                Program *RMFC_check = NULL,
+                std::string sameasAlgo = "");
 
         VLIBEXP static std::shared_ptr<TriggerSemiNaiver> getTriggeredSemiNaiver(
                 EDBLayer &layer,
                 Program *p,
-                bool restrictedChase);
+                TypeChase typeChase);
 
+        int getNumberOfIDBPredicates(Literal&, Program&);
 
         ~Reasoner() {
         }

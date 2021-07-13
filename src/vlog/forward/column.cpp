@@ -230,6 +230,7 @@ EDBColumn::EDBColumn(EDBLayer &edb, const Literal &lit, uint8_t posColumn,
         const std::vector<uint8_t> presortPos, const bool unq) :
     layer(edb),
     l(lit),
+    pred_id(l.getPredicate().getId()),
     posColumn(posColumn),
     presortPos(presortPos),
     unq(unq) {
@@ -241,6 +242,13 @@ EDBColumn::EDBColumn(EDBLayer &edb, const Literal &lit, uint8_t posColumn,
         }
         assert(posColumn < lit.getTupleSize());
     }
+
+bool EDBColumn::isEmptyRemovals() const {
+    // std::unique_ptr<ColumnReader> r = getReader();
+    // return r.hasNext();
+    // FIXME think of some optimization RFHH
+    return size() == 0;
+}
 
 size_t EDBColumn::estimateSize() const {
     if (!unq) {
@@ -267,6 +275,25 @@ size_t EDBColumn::size() const {
         }
         */
     }
+#if DEBUG
+    if (layer.hasRemoveLiterals(pred_id)) {
+        std::cerr << "DEBUG column size calls size() via getReader()" << std::endl;
+        size_t sz = getReader()->asVector().size();
+        if (sz != retval) {
+            LOG(DEBUGL) << "query " << l.tostring();
+            LOG(DEBUGL) << "Mismatch between calculated and cached Column " <<
+                " pred. " << pred_id << " size: " << sz << " vs. " << retval <<
+                " l.getNVars " << static_cast<int>(l.getNVars());
+        }
+        retval = sz;
+    }
+#else
+    if (layer.hasRemoveLiterals(pred_id)) {
+        size_t sz = getReader()->asVector().size();
+        LOG(DEBUGL) << "column size cached " << retval << " calculated " << sz;
+        retval = sz;
+    }
+#endif
     return retval;
 }
 
@@ -338,8 +365,8 @@ EDBColumnReader::EDBColumnReader(const Literal &l, const uint8_t posColumn,
         const std::vector<uint8_t> presortPos,
         EDBLayer &layer, const bool unq)
     : l(l), layer(layer), posColumn(posColumn), presortPos(presortPos),
-    unq(unq), //posInItr((l.getTupleSize() - l.getNVars()) + presortPos.size()),
     posInItr(l.getPosVars()[posColumn]),
+    unq(unq),
     itr(NULL), firstCached((Term_t) - 1),
     lastCached((Term_t) - 1) {
     }
@@ -356,6 +383,37 @@ std::pair<uint8_t, std::pair<uint8_t, uint8_t>> EDBColumnReader::getSizeElemUnde
         return itr->getSizeElemUnderlyingArray(posInItr);
     } else {
         return std::make_pair(0, std::make_pair(0, 0));
+    }
+}
+
+void getFieldsForSortedIterator(const Literal &l, const uint8_t posColumn,
+        const std::vector<uint8_t> &presortPos, std::vector<uint8_t> &fields) {
+    int varPositionsInLiterals[256];    // maps positions in literal to variable number
+    int varNo = 0;
+    for (int i = 0; i < l.getTupleSize(); i++) {
+        if (l.getTermAtPos(i).isVariable()) {
+            varPositionsInLiterals[i] = varNo;
+            varNo++;
+        } else {
+            varPositionsInLiterals[i] = -1;
+        }
+    }
+    for (int i = 0; i < presortPos.size(); ++i) {
+        assert(presortPos[i] < l.getTupleSize());
+        int pos = varPositionsInLiterals[presortPos[i]];
+        if (pos >= 0) {
+            fields.push_back(pos);
+        }
+    }
+    assert(posColumn < l.getTupleSize());
+    int pos = varPositionsInLiterals[posColumn];
+    if (pos >= 0) {
+        for (int i = 0; i < fields.size(); i++) {
+            if (fields[i] == pos) {
+                return;
+            }
+        }
+        fields.push_back(pos);
     }
 }
 
@@ -387,7 +445,6 @@ std::vector<Term_t> EDBColumnReader::load(const Literal &l,
     std::vector<Term_t> values;
 
     EDBIterator *itr = layer.getSortedIterator(l, fields);
-    //const uint8_t posInItr = (l.getTupleSize() - l.getNVars()) + presortPos.size(); //n constants + presortPos
     const uint8_t posInItr = l.getPosVars()[posColumn];
     Term_t prev = (Term_t) - 1;
     const char *rawarray = itr->getUnderlyingArray(posInItr);

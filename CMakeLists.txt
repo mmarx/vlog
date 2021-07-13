@@ -52,13 +52,17 @@ file(GLOB vlog_SRC
     "src/vlog/backward/*.cpp"
     "src/vlog/forward/*.cpp"
     "src/vlog/magic/*.cpp"
+    "src/vlog/incremental/*.cpp"
+    "src/vlog/embeddings/*.cpp"
     "src/vlog/inmemory/*.cpp"
     "src/vlog/trident/*.cpp"
     "src/vlog/cycles/*.cpp"
     "src/vlog/ml/*.cpp"
-    "src/vlog/deps/*.cpp"
+    "src/vlog/trigger/*.cpp"
     "src/launcher/vloglayer.cpp"
     "src/launcher/vlogscan.cpp"
+    "src/vlog/prediction/*.cpp"
+    "src/vlog/util/*.cpp"
     )
 
 #ZLIB

@@ -8,30 +8,35 @@
 
 
 class EDBConf {
-public:
+    public:
 
-    struct Table {
-        std::string predname;
-        std::string type;
-        std::vector<std::string> params;
-        bool encoded;
-        Table() : encoded(true) {}
-        Table(bool encoded) : encoded(encoded) {}
-    };
+        struct Table {
+            std::string predname;
+            std::string type;
+            std::vector<std::string> params;
+            bool encoded;
+            Table() : encoded(true) {}
+            Table(bool encoded) : encoded(encoded) {}
+        };
 
-private:
-    std::vector<Table> tables;
+    protected:
+        std::vector<Table> tables;
+        std::string rootPath;
 
-    void parse(std::string f);
+        void parse(std::string f);
 
-public:
-    VLIBEXP EDBConf(std::string rawcontent, bool isFile);
+    public:
+        VLIBEXP EDBConf(std::string rawcontent, bool isFile);
 
-    EDBConf(std::string rawcontent) : EDBConf(rawcontent, true) {}
+        EDBConf(std::string rawcontent) : EDBConf(rawcontent, true) {}
 
-    const std::vector<Table> &getTables() {
-        return tables;
-    }
+        void setRootPath(std::string path);
+
+        std::string getRootPath() const;
+
+        const std::vector<Table> &getTables() const {
+            return tables;
+        }
 };
 
 #endif

@@ -7,7 +7,10 @@
 
 #include <zstr/zstr.hpp>
 
-std::vector<std::string> readRow(istream &ifs) {
+void dump() {
+}
+
+std::vector<std::string> readRow(istream &ifs, char separator) {
     char buffer[65536];
     bool insideEscaped = false;
     char *p = &buffer[0];
@@ -44,7 +47,7 @@ std::vector<std::string> readRow(istream &ifs) {
         } else {
             quoteCount = 0;
         }
-        if (eof || (! insideEscaped && (c == '\n' || c == ','))) {
+        if (eof || (! insideEscaped && (c == '\n' || c == separator))) {
             if (justSeenQuote) {
                 *(p-1) = '\0';
             } else {
@@ -74,14 +77,16 @@ std::string convertString(const char *s, int len) {
 
     std::string ss = std::string(s, s+len);
 
+    /*
     if (len > 1 && s[0] == '"' && s[len-1] == '"') {
         return (ss + "^^<http://www.w3.org/2001/XMLSchema#string>").c_str();
     }
+    */
     return ss;
 }
 
 InmemoryTable::InmemoryTable(std::string repository, std::string tablename,
-        PredId_t predid, EDBLayer *layer) {
+        PredId_t predid, EDBLayer *layer, char sep, bool loadData) {
     this->layer = layer;
     arity = 0;
     this->predid = predid;
@@ -104,6 +109,7 @@ InmemoryTable::InmemoryTable(std::string repository, std::string tablename,
         ifs = new std::ifstream(tablefile, ios_base::in | ios_base::binary);
         if (ifs->fail()) {
             std::string e = "While importing data for predicate \"" + layer->getPredName(predid) + "\": could not open file " + tablefile;
+            segment = NULL;
             LOG(ERRORL) << e;
             throw (e);
         }
@@ -111,7 +117,7 @@ InmemoryTable::InmemoryTable(std::string repository, std::string tablename,
     if (ifs != NULL) {
         LOG(DEBUGL) << "Reading " << tablefile;
         while (! ifs->eof()) {
-            std::vector<std::string> row = readRow(*ifs);
+            std::vector<std::string> row = readRow(*ifs, sep);
             Term_t rowc[256];
             if (arity == 0) {
                 arity = row.size();
@@ -130,7 +136,10 @@ InmemoryTable::InmemoryTable(std::string repository, std::string tablename,
                 layer->getOrAddDictNumber(row[i].c_str(), row[i].size(), val);
                 rowc[i] = val;
             }
-            inserter->addRow(rowc);
+            if (loadData)
+                inserter->addRow(rowc);
+            else
+                break;
         }
         delete ifs;
     } else {
@@ -149,6 +158,7 @@ InmemoryTable::InmemoryTable(std::string repository, std::string tablename,
         } else {
             std::string e = "While importing data for predicate \"" + layer->getPredName(predid) + "\": could not open file " + tablefile + " nor " + (repository + "/" + tablename + ".csv") + " nor gzipped versions";
             LOG(ERRORL) << e;
+            segment = NULL;
             throw(e);
         }
         FileReader reader(f);
@@ -162,6 +172,10 @@ InmemoryTable::InmemoryTable(std::string repository, std::string tablename,
                 std::string sp = convertString(p, lp);
                 const char *o = reader.getCurrentO(lo);
                 std::string so = convertString(o, lo);
+
+                if (!loadData)
+                    break;
+
                 if (inserter == NULL) {
                     inserter = new SegmentInserter(3);
                 }
@@ -222,13 +236,48 @@ InmemoryTable::InmemoryTable(PredId_t predid,
 }
 
 InmemoryTable::InmemoryTable(PredId_t predid,
+        const Literal &query,
+        // const
+        EDBIterator *iter,
+        EDBLayer *layer) {
+    // Collect matching data. Will be stored in an InmemoryTable.
+    std::vector<Term_t> term(query.getTupleSize());
+    // need to store all variables, then afterwards sort by fields
+    arity = query.getTupleSize();
+    this->predid = predid;
+    this->layer = layer;
+    //Load the table in the database
+    SegmentInserter *inserter = NULL;
+    int count = 0;
+    while (iter->hasNext()) {
+        iter->next();
+        for (size_t i = 0; i < term.size(); ++i) {
+            term[i] = iter->getElementAt(i);
+        }
+        if (inserter == NULL) {
+            inserter = new SegmentInserter(arity);
+        }
+        inserter->addRow(term.data());
+        count++;
+    }
+    LOG(DEBUGL) << "InmemoryTable constructor: " << count;
+
+    if (inserter == NULL) {
+        segment = NULL;
+    } else {
+        segment = inserter->getSortedAndUniqueSegment();
+        delete inserter;
+    }
+}
+
+InmemoryTable::InmemoryTable(PredId_t predid,
         uint8_t arity,
         std::vector<uint64_t> &entries,
         EDBLayer *layer) {
     this->arity = arity;
     this->predid = predid;
     this->layer = layer;
-    SegmentInserter *inserter = new SegmentInserter(arity);
+    SegmentInserter *inserter =  new SegmentInserter(arity);
     for(uint64_t i = 0; i < entries.size(); i += arity) {
         Term_t rowc[256];
         for(uint8_t j = 0; j < arity; ++j) {
@@ -366,19 +415,17 @@ void _literal2filter(const Literal &query, std::vector<uint8_t> &posVarsToCopy,
 }
 
 size_t InmemoryTable::getCardinality(const Literal &q) {
-    if (q.getTupleSize() != arity) {
-        // TODO this should throw an error I think
-        return 0;
-    }
-    if (q.getNUniqueVars() == q.getTupleSize()) {
-        if (segment == NULL) {
-            return 0;
+    size_t res;
+
+    HiResTimer t_card("InmemoryTable::getCardinality(" + q.tostring() + ")");
+    t_card.start();
+    if (q.getTupleSize() != arity || segment == NULL) {
+        res = 0;
+    } else if (q.getNUniqueVars() == q.getTupleSize()) {
+        if (arity == 0) {
+            res = 1;
         } else {
-            if (arity == 0) {
-                return 1;
-            } else {
-                return segment->getNRows();
-            }
+            res = segment->getNRows();
         }
     } else {
         EDBIterator *iter = getIterator(q);
@@ -390,11 +437,18 @@ size_t InmemoryTable::getCardinality(const Literal &q) {
         iter->clear();
         delete iter;
         LOG(DEBUGL) << "Cardinality of " << q.tostring(NULL, layer) << " is " << count;
-        return count;
+        res = count;
     }
+    t_card.stop();
+    LOG(DEBUGL) << t_card.tostring();
+
+    return res;
 }
 
 size_t InmemoryTable::getCardinalityColumn(const Literal &q, uint8_t posColumn) {
+    if (segment == NULL) {
+        return 0;
+    }
     if (q.getNUniqueVars() == q.getTupleSize()) {
         std::shared_ptr<Column> col = segment->getColumn(posColumn);
         return col->sort_and_unique()->size();
@@ -419,7 +473,7 @@ size_t InmemoryTable::getCardinalityColumn(const Literal &q, uint8_t posColumn) 
 
 EDBIterator *InmemoryTable::getIterator(const Literal &q) {
     std::vector<uint8_t> sortFields;
-    if (q.getTupleSize() != arity) {
+    if (q.getTupleSize() != arity || segment == NULL) {
         return new InmemoryIterator(NULL, predid, sortFields);
     }
     if (q.getNUniqueVars() == q.getTupleSize()) {
@@ -548,6 +602,8 @@ std::shared_ptr<const Segment> InmemoryTable::getSortedCachedSegment(
 
 EDBIterator *InmemoryTable::getSortedIterator(const Literal &query,
         const std::vector<uint8_t> &fields) {
+    LOG(DEBUGL) << "InmemoryTable::getSortedIterator (1) query " << query.tostring(NULL, layer) << " fields " << fields2str(fields);
+
     std::vector<uint8_t> offsets;
     int nConstantsSeen = 0;
     for (int i = 0; i < query.getTupleSize(); i++) {
@@ -563,18 +619,20 @@ EDBIterator *InmemoryTable::getSortedIterator(const Literal &query,
     }
     std::vector<uint8_t> newFields;
     for (auto f : fields) {
+        assert(f < offsets.size());
         newFields.push_back(offsets[f] + f);
     }
+    assert(newFields.size() == fields.size());
     return getSortedIterator2(query, newFields);
 }
 
 EDBIterator *InmemoryTable::getSortedIterator2(const Literal &query,
         const std::vector<uint8_t> &fields) {
-    if (query.getTupleSize() != arity) {
+    if (query.getTupleSize() != arity || segment == NULL) {
         return new InmemoryIterator(NULL, predid, fields);
     }
 
-    LOG(DEBUGL) << "InmemoryTable::getSortedIterator, query = " << query.tostring(NULL, layer) << ", fields.size() = " << fields.size();
+    LOG(DEBUGL) << "InmemoryTable::getSortedIterator, query = " << query.tostring(NULL, layer) << ", fields " << fields2str(fields);
 
     /*** Look at the query to see if we need filtering***/
     std::vector<uint8_t> posVarsToCopy;

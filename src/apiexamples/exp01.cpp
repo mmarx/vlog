@@ -6,13 +6,12 @@
 #include <vlog/api.h>
 
 #include <iostream>
-#include <numeric>
 
 std::string to_string(std::vector<std::string> row, std::string sep) {
     int len = row.size();
     std::string result = "[";
     for (int i=0; i<len-1; ++i)
-        result += row[i] + sep; 
+        result += row[i] + sep;
     if (len)
         result += row[len-1];
     result += "]";
@@ -33,6 +32,8 @@ int main() {
     api.addFacts("p", pExtension);
 
     /* IMPORTANT: the data must be added before the rules */
+    /* IMPORTANT: terms starting with an uppercase letter are interpreted as variables */
+    /* IMPORTANT: terms starting with a lowercase letter are interpreted as constants */
     // Add some rule to the API instance
     api.addRule("q(X,Z,Y) :- p(X,Y)");
     api.addRule("r(X,Y,Z) :- p(X,Y), p(Y,Z)");

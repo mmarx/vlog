@@ -20,17 +20,28 @@
 #include <vlog/sparql/sparqltable.h>
 #endif
 #include <vlog/inmemory/inmemorytable.h>
+#include <vlog/embeddings/embtable.h>
+#include <vlog/embeddings/topktable.h>
+#include <vlog/incremental/edb-table-from-idb.h>
+#include <vlog/incremental/edb-table-importer.h>
 
-#include <unordered_map>
 #include <climits>
+#include <inttypes.h>
 
-
-EDBLayer::EDBLayer(EDBLayer &db, bool copyTables) {
+EDBLayer::EDBLayer(EDBLayer &db, bool copyTables) : conf(db.conf) {
     this->predDictionary = db.predDictionary;
     this->termsDictionary = db.termsDictionary;
     if (copyTables) {
         this->dbPredicates = db.dbPredicates;
     }
+}
+
+std::vector<PredId_t> EDBLayer::getAllEDBPredicates() {
+    std::vector<PredId_t> out;
+    for(const auto &pair : dbPredicates) {
+        out.push_back(pair.first);
+    }
+    return out;
 }
 
 void EDBLayer::addTridentTable(const EDBConf::Table &tableConf, bool multithreaded) {
@@ -43,10 +54,11 @@ void EDBLayer::addTridentTable(const EDBConf::Table &tableConf, bool multithread
         throw error;
     }
     infot.id = (PredId_t) predDictionary->getOrAdd(pn);
-    infot.arity = 3;
     infot.type = tableConf.type;
     infot.manager = std::shared_ptr<EDBTable>(new TridentTable(kbpath, multithreaded, this));
+    infot.arity = infot.manager->getArity();
     dbPredicates.insert(std::make_pair(infot.id, infot));
+    LOG(INFOL) << "Inserted " << pn << " with number " << infot.id;
     LOG(DEBUGL) << "Inserted " << pn << " with number " << infot.id;
 }
 
@@ -106,17 +118,32 @@ void EDBLayer::addMDLiteTable(const EDBConf::Table &tableConf) {
 #endif
 
 void EDBLayer::addInmemoryTable(const EDBConf::Table &tableConf) {
-    LOG(INFOL) << "Larry: EDBLayer::addInmemoryTable: start (const EDBConf::Table)";
     EDBInfoTable infot;
     const std::string pn = tableConf.predname;
     infot.id = (PredId_t) predDictionary->getOrAdd(pn);
     infot.type = tableConf.type;
-    InmemoryTable *table = new InmemoryTable(tableConf.params[0],
-            tableConf.params[1], infot.id, this);
+    string repository = tableConf.params[0];
+    if (repository.size() > 0 && repository[0] != '/') {
+        //Relative path. Add the root path
+        repository = rootPath + "/" + repository;
+    }
+    InmemoryTable *table;
+    if (tableConf.params.size() == 2) {
+        table = new InmemoryTable(repository,
+                tableConf.params[1], infot.id, this);
+    } else {
+        char sep = tableConf.params[2][0];
+        if (sep == 't')
+            sep = '\t';
+        table = new InmemoryTable(repository,
+                tableConf.params[1], infot.id, this, sep, loadAllData);
+    }
     infot.manager = std::shared_ptr<EDBTable>(table);
     infot.arity = table->getArity();
     dbPredicates.insert(std::make_pair(infot.id, infot));
-    LOG(INFOL) << "Larry: EDBLayer::addInmemoryTable: end";
+
+    LOG(DEBUGL) << "Imported InmemoryTable " << pn << " id " << infot.id << " size " << table->getSize();
+    // table->dump(std::cerr);
 }
 
 void EDBLayer::addInmemoryTable(std::string predicate, std::vector<std::vector<std::string>> &rows) {
@@ -125,7 +152,6 @@ void EDBLayer::addInmemoryTable(std::string predicate, std::vector<std::vector<s
 }
 
 void EDBLayer::addInmemoryTable(std::string predicate, PredId_t id, std::vector<std::vector<std::string>> &rows) {
-    LOG(INFOL) << "Larry: EDBLayer::addInmemoryTable: start (std::string, PredId_t, std::vector<std::vector<std::string>>)";
     EDBInfoTable infot;
     infot.id = id;
     if (doesPredExists(infot.id)) {
@@ -138,14 +164,13 @@ void EDBLayer::addInmemoryTable(std::string predicate, PredId_t id, std::vector<
     infot.manager = std::shared_ptr<EDBTable>(table);
     dbPredicates.insert(std::make_pair(infot.id, infot));
     LOG(DEBUGL) << "Added table for " << predicate << ":" << infot.id << ", arity = " << (int) table->getArity() << ", size = " << table->getSize();
-    LOG(INFOL) << "Larry: EDBLayer::addInmemoryTable: end";
+    //LOG(INFOL) << "Imported InmemoryTable id " << infot.id << " predicate " << predicate;
+    // table->dump(std::cerr);
 }
-
 
 void EDBLayer::addInmemoryTable(PredId_t id,
         uint8_t arity,
         std::vector<uint64_t> &rows) {
-    LOG(INFOL) << "Larry: EDBLayer::addInmemoryTable: start (PredId_t, uint8_t, std::vector<uint64_t>)";
     EDBInfoTable infot;
     infot.id = id;
     if (doesPredExists(infot.id)) {
@@ -157,7 +182,6 @@ void EDBLayer::addInmemoryTable(PredId_t id,
     infot.arity = table->getArity();
     infot.manager = std::shared_ptr<EDBTable>(table);
     dbPredicates.insert(std::make_pair(infot.id, infot));
-    LOG(INFOL) << "Larry: EDBLayer::addInmemoryTable: end";
 }
 
 #ifdef SPARQL
@@ -176,6 +200,81 @@ void EDBLayer::addSparqlTable(const EDBConf::Table &tableConf) {
     dbPredicates.insert(make_pair(infot.id, infot));
 }
 #endif
+
+void EDBLayer::addEmbTable(const EDBConf::Table &tableConf) {
+    EDBInfoTable infot;
+    const std::string predicate = tableConf.predname;
+    infot.id = (PredId_t) predDictionary->getOrAdd(predicate);
+    if (doesPredExists(infot.id)) {
+        LOG(WARNL) << "Rewriting table for predicate " << predicate;
+        dbPredicates.erase(infot.id);
+    }
+    infot.type = "Embeddings";
+    EmbTable *table = new EmbTable(infot.id, predicate, this,
+            tableConf.params[0], tableConf.params[1], tableConf.params[2]);
+    infot.arity = table->getArity();
+    infot.manager = std::shared_ptr<EDBTable>(table);
+    dbPredicates.insert(std::make_pair(infot.id, infot));
+}
+
+void EDBLayer::addTopKTable(const EDBConf::Table &tableConf) {
+    EDBInfoTable infot;
+    const std::string predicate = tableConf.predname;
+    infot.id = (PredId_t) predDictionary->getOrAdd(predicate);
+    if (doesPredExists(infot.id)) {
+        LOG(WARNL) << "Rewriting table for predicate " << predicate;
+        dbPredicates.erase(infot.id);
+    }
+    infot.type = "TopK";
+    TopKTable *table = new TopKTable(infot.id, this, tableConf.params[0],
+            tableConf.params[1], tableConf.params[2], tableConf.params[3]);
+    infot.arity = table->getArity();
+    infot.manager = std::shared_ptr<EDBTable>(table);
+    dbPredicates.insert(std::make_pair(infot.id, infot));
+}
+void EDBLayer::addEDBonIDBTable(const EDBConf::Table &tableConf) {
+    EDBInfoTable infot;
+    const string pn = tableConf.predname;
+
+    Term_t tid;
+    if (! predDictionary->get(pn, tid)) {
+        LOG(ERRORL) << "predicate should have been pre-registered in EDB";
+        throw "predicate should have been pre-registered in EDB";
+    }
+    PredId_t pid = (PredId_t)tid;
+    infot.id = pid;
+    infot.type = tableConf.type;
+    EDBonIDBTable *table = new EDBonIDBTable(infot.id, this,
+            prevSemiNaiver[tableConf.params[0]]);
+    infot.manager = std::shared_ptr<EDBTable>(table);
+    infot.arity = table->getArity();
+    dbPredicates.insert(std::make_pair(infot.id, infot));
+
+    LOG(INFOL) << "Inserted EDBonIDB table id " << infot.id << " predicate " << pn;
+    // table->dump(std::cout);
+}
+
+void EDBLayer::addEDBimporter(const EDBConf::Table &tableConf) {
+    EDBInfoTable infot;
+    const string pn = tableConf.predname;
+
+    Term_t tid;
+    if (! predDictionary->get(pn, tid)) {
+        LOG(ERRORL) << "predicate should have been pre-registered in EDB";
+        throw "predicate should have been pre-registered in EDB";
+    }
+    PredId_t pid = (PredId_t)tid;
+    infot.id = pid;
+    infot.type = tableConf.type;
+    EDBimporter *table = new EDBimporter(infot.id, this,
+            prevSemiNaiver[tableConf.params[0]]);
+    infot.manager = std::shared_ptr<EDBTable>(table);
+    infot.arity = table->getArity();
+    dbPredicates.insert(std::make_pair(infot.id, infot));
+
+    LOG(INFOL) << "Inserted EDBimporter table id " << infot.id << " predicate " << pn;
+    // table->dump(std::cout);
+}
 
 bool EDBLayer::doesPredExists(PredId_t id) const {
     LOG(DEBUGL) << "doesPredExists for: " << id;
@@ -415,7 +514,15 @@ EDBIterator *EDBLayer::getIterator(const Literal &query) {
 
     if (dbPredicates.count(predid)) {
         auto p = dbPredicates.find(predid);
-        return p->second.manager->getIterator(query);
+        auto itr = p->second.manager->getIterator(query);
+        if (hasRemoveLiterals(predid)) {
+            LOG(DEBUGL) << "HERE " << __func__ << ":" << __LINE__ << "=" << query.tostring(NULL, this) << " inject RemoveIterator";
+            EDBIterator *ritr = new EDBRemovalIterator(query, *removals[predid], itr);
+            return ritr;
+        } else {
+            return itr;
+        }
+
     } else if (tmpRelations.size() <= predid) {
         return new EmptyEDBIterator(predid);
     } else {
@@ -436,28 +543,45 @@ EDBIterator *EDBLayer::getIterator(const Literal &query) {
             case 1:
                 itr = memItrFactory.get();
                 itr->init1(predid, rel->getSingleColumn(), c1, vc1);
-                return itr;
+                break;
             case 2:
                 itr = memItrFactory.get();
                 itr->init2(predid, c1, rel->getTwoColumn1(), c1, vc1, c2, vc2, equalFields);
-                return itr;
+                break;
+            default:
+                throw 10;
+        }
+
+        if (hasRemoveLiterals(predid)) {
+            LOG(DEBUGL) << "HERE " << __func__ << ":" << __LINE__ << "=" << query.tostring(NULL, this) << " inject RemoveIterator";
+            EDBIterator *ritr = new EDBRemovalIterator(query, *removals[predid], itr);
+            return ritr;
+        } else {
+            return itr;
         }
     }
-    throw 10;
 }
+
 
 EDBIterator *EDBLayer::getSortedIterator(const Literal &query,
         const std::vector<uint8_t> &fields) {
     const Literal *literal = &query;
     PredId_t predid = literal->getPredicate().getId();
+    EDBIterator *itr;
 
     if (dbPredicates.count(predid)) {
         auto p = dbPredicates.find(predid);
-        return p->second.manager->getSortedIterator(query, fields);
+        itr = p->second.manager->getSortedIterator(query, fields);
+        if (hasRemoveLiterals(predid)) {
+            LOG(DEBUGL) << "EDBLayer=" << name << " Wrap an EDBRemovalIterator for " << literal->tostring();
+            itr = new EDBRemovalIterator(query, fields, *removals[predid], itr);
+        } else {
+            LOG(DEBUGL) << "EDBLayer=" << name << " No wrap of an EDBRemovalIterator for " << literal->tostring();
+        }
+        return itr;
     } else if (tmpRelations.size() <= predid) {
         return new EmptyEDBIterator(predid);
     } else {
-        assert(literal->getTupleSize() <= 2);
         bool equalFields = false;
         if (query.hasRepeatedVars()) {
             equalFields = true;
@@ -472,32 +596,41 @@ EDBIterator *EDBLayer::getSortedIterator(const Literal &query,
 
         IndexedTupleTable *rel = tmpRelations[predid];
         uint8_t size = rel->getSizeTuple();
-        EDBMemIterator *itr;
+        EDBMemIterator *mitr;
         switch (size) {
             case 1:
-                itr = memItrFactory.get();
-                itr->init1(predid, rel->getSingleColumn(), c1, vc1);
-                return itr;
+                mitr = memItrFactory.get();
+                mitr->init1(predid, rel->getSingleColumn(), c1, vc1);
+                break;
             case 2:
-                itr = memItrFactory.get();
+                mitr = memItrFactory.get();
                 if (c1) {
-                    itr->init2(predid, true, rel->getTwoColumn1(), c1, vc1, c2, vc2, equalFields);
+                    mitr->init2(predid, true, rel->getTwoColumn1(), c1, vc1, c2, vc2, equalFields);
                 } else {
                     if (c2) {
-                        itr->init2(predid, false, rel->getTwoColumn2(), c1, vc1, c2, vc2, equalFields);
+                        mitr->init2(predid, false, rel->getTwoColumn2(), c1, vc1, c2, vc2, equalFields);
                     } else {
                         //No constraints
                         if (fields.size() != 0 && fields[0] == 0) {
-                            itr->init2(predid, true, rel->getTwoColumn1(), c1, vc1, c2, vc2, equalFields);
+                            mitr->init2(predid, true, rel->getTwoColumn1(), c1, vc1, c2, vc2, equalFields);
                         } else {
-                            itr->init2(predid, false, rel->getTwoColumn2(), c1, vc1, c2, vc2, equalFields);
+                            mitr->init2(predid, false, rel->getTwoColumn2(), c1, vc1, c2, vc2, equalFields);
                         }
                     }
                 }
-                return itr;
+                break;
+            default:
+                throw 10;
+        }
+        if (hasRemoveLiterals(predid)) {
+            LOG(DEBUGL) << "EDBLayer=" << name << " Wrap an EDBRemovalIterator on EDBMemIterator for " << literal->tostring();
+            itr = new EDBRemovalIterator(query, fields, *removals[predid], mitr);
+        } else {
+            itr = mitr;
         }
     }
-    throw 10;
+
+    return itr;
 }
 
 size_t EDBLayer::getCardinalityColumn(const Literal &query,
@@ -681,9 +814,16 @@ bool EDBLayer::checkValueInTmpRelation(const uint8_t relId, const uint8_t posInR
 }
 
 void EDBLayer::releaseIterator(EDBIterator * itr) {
-    if (dbPredicates.count(itr->getPredicateID())) {
-        auto p = dbPredicates.find(itr->getPredicateID());
-        return p->second.manager->releaseIterator(itr);
+    PredId_t pred_id = itr->getPredicateID();
+    if (dbPredicates.count(pred_id)) {
+        auto p = dbPredicates.find(pred_id);
+        if (hasRemoveLiterals(pred_id)) {
+            auto ritr = dynamic_cast<EDBRemovalIterator *>(itr);
+            p->second.manager->releaseIterator(ritr->getUnderlyingIterator());
+            delete itr;
+        } else {
+            p->second.manager->releaseIterator(itr);
+        }
     } else {
         memItrFactory.release((EDBMemIterator*)itr);
     }
@@ -699,6 +839,16 @@ std::vector<std::shared_ptr<Column>> EDBLayer::checkNewIn(
     }
     auto p = dbPredicates.find(l.getPredicate().getId());
     return p->second.manager->checkNewIn(valuesToCheck, l, posInL);
+}
+
+template <typename VAR>
+static std::vector<VAR> range(size_t size) {
+    std::vector<VAR> r(size);
+    for (size_t i = 0; i < size; ++i) {
+        r[i] = static_cast<VAR>(i);
+    }
+
+    return r;
 }
 
 static std::vector<std::shared_ptr<Column>> checkNewInGeneric(const Literal &l1,
@@ -859,14 +1009,18 @@ std::shared_ptr<Column> EDBLayer::checkIn(
 
 }
 
-bool EDBLayer::getDictNumber(const char *text, const size_t sizeText, uint64_t &id) {
+bool EDBLayer::getDictNumber(const char *text, const size_t sizeText, uint64_t &id) const {
     bool resp = false;
+    size_t sz = sizeText;
+    if (sz > 43 && text[0] == '"' && ! strcmp(text + sz - 43, "^^<http://www.w3.org/2001/XMLSchema#string>")) {
+        sz -= 43;
+    }
     if (dbPredicates.size() > 0) {
         resp = dbPredicates.begin()->second.manager->
-            getDictNumber(text, sizeText, id);
+            getDictNumber(text, sz, id);
     }
     if (!resp && termsDictionary.get()) {
-        std::string t(text, sizeText);
+        std::string t(text, sz);
         resp = termsDictionary->get(t, id);
     }
     return resp;
@@ -875,31 +1029,43 @@ bool EDBLayer::getDictNumber(const char *text, const size_t sizeText, uint64_t &
 bool EDBLayer::getOrAddDictNumber(const char *text, const size_t sizeText,
         uint64_t &id) {
     bool resp = false;
-//    LOG(ERRORL) << "Larry: EDBLayer::getOrAddDictNumber: start";
+    size_t sz = sizeText;
+    if (sz > 43 && text[0] == '"' && ! strcmp(text + sz - 43, "^^<http://www.w3.org/2001/XMLSchema#string>")) {
+        sz -= 43;
+    }
     if (dbPredicates.size() > 0) {
-//        LOG(ERRORL) << "Larry: EDBLayer::getOrAddDictNumber: if 1";
         resp = dbPredicates.begin()->second.manager->
-            getDictNumber(text, sizeText, id);
+            getDictNumber(text, sz, id);
     }
     if (!resp) {
-//        LOG(ERRORL) << "Larry: EDBLayer::getOrAddDictNumber: if 2";
         if (!termsDictionary.get()) {
-//            LOG(ERRORL) << "Larry: EDBLayer::getOrAddDictNumber: if 2.1";
             LOG(DEBUGL) << "The additional terms will start from " << getNTerms();
             termsDictionary = std::shared_ptr<Dictionary>(
                     new Dictionary(getNTerms()));
         }
-        std::string t(text, sizeText);
+        std::string t(text, sz);
         id = termsDictionary->getOrAdd(t);
         LOG(TRACEL) << "getOrAddDictNumber \"" << t << "\" returns " << id;
         resp = true;
     }
-//    LOG(ERRORL) << "Larry: EDBLayer::getOrAddDictNumber: resp: " << std::to_string(resp);
-//    LOG(ERRORL) << "Larry: EDBLayer::getOrAddDictNumber: end";
     return resp;
 }
 
-bool EDBLayer::getDictText(const uint64_t id, char *text) {
+bool EDBLayer::getDictText(const uint64_t id, char *text) const {
+    if (IS_NUMBER(id)) {
+        if (IS_UINT(id)) {
+            uint64_t value = GET_UINT(id);
+            sprintf(text,"%" PRIu64,value);
+            return true;
+        } else if (IS_FLOAT32(id)) {
+            float value = GET_FLOAT32(id);
+            sprintf(text,"%f",value);
+            return true;
+        } else {
+            LOG(ERRORL) << "Datatype for " << id << " was not found";
+            return false;
+        }
+    }
     bool resp = false;
     if (dbPredicates.size() > 0) {
         resp = dbPredicates.begin()->second.manager->getDictText(id, text);
@@ -915,7 +1081,20 @@ bool EDBLayer::getDictText(const uint64_t id, char *text) {
     return resp;
 }
 
-std::string EDBLayer::getDictText(const uint64_t id) {
+std::string EDBLayer::getDictText(const uint64_t id) const {
+   if (IS_NUMBER(id)) {
+        if (IS_UINT(id)) {
+            uint64_t value = GET_UINT(id);
+            return std::to_string(value);
+        } else if (IS_FLOAT32(id)) {
+            float value = GET_FLOAT32(id);
+            return std::to_string(value);
+        } else {
+            LOG(ERRORL) << "Datatype for " << id << " was not found";
+            return "";
+        }
+    }
+
     std::string t = "";
     bool resp = false;
     if (dbPredicates.size() > 0) {
@@ -927,7 +1106,7 @@ std::string EDBLayer::getDictText(const uint64_t id) {
     return t;
 }
 
-uint64_t EDBLayer::getNTerms() {
+uint64_t EDBLayer::getNTerms() const {
     uint64_t size = 0;
     if (dbPredicates.size() > 0) {
         size = dbPredicates.begin()->second.manager->getNTerms();
@@ -938,47 +1117,44 @@ uint64_t EDBLayer::getNTerms() {
     return size;
 }
 
-Predicate EDBLayer::getDBPredicate(int idPredicate) {
+Predicate EDBLayer::getDBPredicate(int idPredicate) const {
     if (!dbPredicates.count(idPredicate)) {
         throw 10; //cannot happen
     }
-    EDBInfoTable &info = dbPredicates.find(idPredicate)->second;
+    const EDBInfoTable &info = dbPredicates.find(idPredicate)->second;
     return Predicate(idPredicate, 0, EDB, info.arity);
 }
 
-std::vector<PredId_t> EDBLayer::getAllPredicateIDs() {
+std::vector<PredId_t> EDBLayer::getAllPredicateIDs() const {
     std::vector<PredId_t> out;
-    for(auto &t : dbPredicates) {
+    for(const auto &t : dbPredicates) {
         out.push_back(t.first);
     }
     return out;
 }
 
-uint64_t EDBLayer::getPredSize(PredId_t id) {
+uint64_t EDBLayer::getPredSize(PredId_t id) const {
     if (dbPredicates.count(id)) {
-        return dbPredicates[id].manager->getSize();
+        return dbPredicates.at(id).manager->getSize();
     }
     return 0;
 }
 
-std::string EDBLayer::getPredType(PredId_t id) {
+std::string EDBLayer::getPredType(PredId_t id) const {
     if (dbPredicates.count(id)) {
-        return dbPredicates[id].type;
+        return dbPredicates.at(id).type;
     }
     return NULL;
 }
 
-std::string EDBLayer::getPredName(PredId_t id) {
+std::string EDBLayer::getPredName(PredId_t id) const {
     return predDictionary->getRawValue(id);
 }
 
-uint8_t EDBLayer::getPredArity(PredId_t id) {
-    LOG(INFOL) << "Larry: EDBLayer::getPredArity: start";
+uint8_t EDBLayer::getPredArity(PredId_t id) const {
     if (dbPredicates.count(id)) {
-        LOG(INFOL) << "Larry: EDBLayer::getPredArity: return "<< dbPredicates[id].arity;
-        return dbPredicates[id].arity;
+        return dbPredicates.at(id).arity;
     }
-    LOG(INFOL) << "Larry: EDBLayer::getPredArity: return 0";
     return 0;
 }
 
@@ -986,6 +1162,15 @@ void EDBLayer::setPredArity(PredId_t id, uint8_t arity) {
     if (dbPredicates.count(id)) {
         dbPredicates[id].arity = arity;
     }
+}
+
+PredId_t EDBLayer::getPredID(const std::string &name) const {
+    for (const auto &p : dbPredicates) {
+        if (predDictionary->getRawValue(p.first) == name) {
+            return p.first;
+        }
+    }
+    return -1;
 }
 
 void EDBMemIterator::init1(PredId_t id, std::vector<Term_t>* v, const bool c1, const Term_t vc1) {
@@ -1344,6 +1529,8 @@ std::shared_ptr<Column> EDBTable::checkIn(
     EDBIterator *iter = getSortedIterator(l, fieldsToSort);
 
     //Output
+    HiResTimer t_merge("checkIn merge");
+    t_merge.start();
     std::unique_ptr<ColumnWriter> col(new ColumnWriter());
     size_t idx1 = 0;
     sizeOutput = 0;
@@ -1370,5 +1557,56 @@ std::shared_ptr<Column> EDBTable::checkIn(
     }
     iter->clear();
     delete iter;
+    t_merge.stop();
+    LOG(INFOL) << t_merge.tostring();
+
     return col->getColumn();
+}
+
+
+// Import all predicates from pre-existing prevSemiNaiver-s ->Program into this
+// EDB layer: they are all needed as EDB predicates. Thingy: I want them
+// to have the same PredId_t so lookup in the EDBonIDB is simple.
+void EDBLayer::handlePrevSemiNaiver() {
+
+    struct NamedPredicate {
+        NamedPredicate(Predicate pred, const std::string &name) :
+            pred(pred), name(name) {
+            };
+
+        Predicate pred;
+        std::string name;
+    };
+
+    const uint64_t dictStart = 1;
+
+    for (auto pSN : prevSemiNaiver) {
+        // const
+        Program *program = pSN.second->getProgram();
+        // Program has no method to expose all PredId's, look them up through
+        // the predicate name
+        const std::vector<std::string> pred_names = program->getAllPredicateStrings();
+        // Need to unique_ptr<> the thingy because Predicate has no default
+        // constructor
+        auto pred = std::vector<std::unique_ptr<NamedPredicate>>(
+                pred_names.size() + dictStart);
+        for (const std::string &n : pred_names) {
+            Predicate p = program->getPredicate(n);
+            if (p.getId() >= pred.size()) {
+                LOG(ERRORL) << "Predicates are not contiguous. Cannot import to new EDBLayer!";
+                throw("Importing predicates: they are not contiguous");
+            }
+            pred[p.getId()] = std::unique_ptr<NamedPredicate>(
+                    new NamedPredicate(p, n));
+        }
+
+        for (::size_t i = dictStart; i < pred.size(); ++i) {
+            const auto &p = pred[i];
+            PredId_t id = predDictionary->getOrAdd(p->name);
+            if (id != p->pred.getId()) {
+                LOG(ERRORL) << "Predicates not contiguous in insert, how can that be?";
+                throw("Copy previous SN predicates: not contiguous after all");
+            }
+        }
+    }
 }

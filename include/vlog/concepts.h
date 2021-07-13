@@ -213,7 +213,7 @@ class Predicate {
             return (type >> 1) != 0;
         }
 
-        uint8_t getAdorment() const {
+        uint8_t getAdornment() const {
             return adornment;
         }
 
@@ -296,7 +296,7 @@ class Literal {
         }
 
         size_t getNBoundVariables() const {
-            return pred.getNFields(pred.getAdorment());
+            return pred.getNFields(pred.getAdornment());
         }
 
         bool isNegated() const {
@@ -323,7 +323,12 @@ class Literal {
 
         bool hasRepeatedVars() const;
 
+        // Returns for each variable the position in the tuple.
         std::vector<uint8_t> getPosVars() const;
+
+        // Returns for each position in the tuple the variable number. If the position in the tuple
+        // contains a constant, it gives -1.
+        std::vector<int> getVarnumInLiteral() const;
 
         std::vector<uint8_t> getVarCount() const;
 
@@ -336,15 +341,11 @@ class Literal {
         std::vector<Var_t> getAllVars() const;
         bool containsVariable(Var_t variableId) const;
 
-        std::string tostring(Program *program, EDBLayer *db) const;
+        std::string tostring(const Program *program, const EDBLayer *db) const;
 
-        std::string toprettystring(Program *program, EDBLayer *db, bool replaceConstants = false) const;
+        std::string toprettystring(const Program *program, const EDBLayer *db, bool replaceConstants = false) const;
 
         std::string tostring() const;
-
-        /*Literal operator=(const Literal &other) {
-          return Literal(other.pred,other.tuple);
-          }*/
 
         bool operator ==(const Literal &other) const;
 };
@@ -356,6 +357,7 @@ class Rule {
         const std::vector<Literal> body;
         const bool _isRecursive;
         const bool existential;
+        const bool egd;
 
         static bool checkRecursion(const std::vector<Literal> &head,
                 const std::vector<Literal> &body);
@@ -364,18 +366,19 @@ class Rule {
         bool doesVarAppearsInFollowingPatterns(int startingPattern, Var_t value) const;
 
         Rule(uint32_t ruleId, const std::vector<Literal> heads,
-                std::vector<Literal> body) :
+                std::vector<Literal> body, bool egd) :
             ruleId(ruleId),
             heads(heads),
             body(body),
             _isRecursive(checkRecursion(heads, body)),
-            existential(!getExistentialVariables().empty()) {
+            existential(!getExistentialVariables().empty()),
+            egd(egd) {
                 checkRule();
             }
 
         Rule(uint32_t ruleId, Rule &r) : ruleId(ruleId),
         heads(r.heads), body(r.body), _isRecursive(r._isRecursive),
-        existential(r.existential) {
+        existential(r.existential), egd(r.egd) {
         }
 
         Rule createAdornment(uint8_t headAdornment) const;
@@ -386,6 +389,10 @@ class Rule {
 
         uint32_t getId() const {
             return ruleId;
+        }
+
+        bool isEGD() const {
+            return egd;
         }
 
         const std::vector<Literal> &getHeads() const {
@@ -474,7 +481,6 @@ class Rule {
 
 class Program {
     private:
-        //const uint64_t assignedIds;
         EDBLayer *kb;
         std::vector<std::vector<uint32_t>> rules; // [head_predicate_id (idx) : [rule_ids]]
         std::vector<Rule> allrules;
@@ -483,21 +489,16 @@ class Program {
         Dictionary dictPredicates;
         std::unordered_map<PredId_t, uint8_t> cardPredicates;
 
-        //Move them to the EDB layer ...
-        //Dictionary additionalConstants;
-
         void rewriteRule(std::vector<Literal> &heads, std::vector<Literal> &body);
 
         void addRule(Rule &rule);
-
-        std::string rewriteRDFOWLConstants(std::string input);
 
     public:
         VLIBEXP Program(EDBLayer *kb);
 
         VLIBEXP Program(Program *p, EDBLayer *kb);
 
-        EDBLayer *getKB() {
+        EDBLayer *getKB() const {
             return kb;
         }
 
@@ -509,6 +510,8 @@ class Program {
             return dictPredicates.getCounter();
         }
 
+        static std::string prettifyName(std::string name);
+
         std::string parseRule(std::string rule, bool rewriteMultihead);
 
         VLIBEXP std::vector<PredId_t> getAllPredicateIDs() const;
@@ -519,17 +522,20 @@ class Program {
 
         VLIBEXP std::string readFromString(std::string rules, bool rewriteMultihead = false);
 
-        PredId_t getPredicateID(std::string &p, const uint8_t card);
+        // Adds predicate if it doesn't exist yet
+        PredId_t getPredicateID(const std::string &p, const uint8_t card);
 
-        VLIBEXP std::string getPredicateName(const PredId_t id);
+        VLIBEXP std::string getPredicateName(const PredId_t id) const;
 
-        VLIBEXP Predicate getPredicate(std::string &p);
+        // Adds predicate if it doesn't exist yet
+        VLIBEXP Predicate getPredicate(const std::string &p);
 
-        VLIBEXP Predicate getPredicate(std::string &p, uint8_t adornment);
+        // Adds predicate if it doesn't exist yet
+        VLIBEXP Predicate getPredicate(const std::string &p, uint8_t adornment);
 
-        VLIBEXP Predicate getPredicate(const PredId_t id);
+        VLIBEXP Predicate getPredicate(const PredId_t id) const;
 
-        VLIBEXP int64_t getOrAddPredicate(std::string &p, uint8_t cardinality);
+        VLIBEXP int64_t getOrAddPredicate(const std::string &p, uint8_t cardinality);
 
         VLIBEXP bool doesPredicateExist(const PredId_t id) const;
 
@@ -541,17 +547,9 @@ class Program {
 
         const Rule &getRule(uint32_t ruleid) const;
 
-        /*std::string getFromAdditional(Term_t val) {
-          return additionalConstants.getRawValue(val);
-          }
-
-          uint64_t getOrAddToAdditional(std::string term) {
-          return additionalConstants.getOrAdd(term);
-          }*/
-
         VLIBEXP void sortRulesByIDBPredicates();
 
-        VLIBEXP std::vector<Rule> getAllRules();
+        VLIBEXP std::vector<Rule> getAllRules() const;
 
         VLIBEXP int getNRules() const;
 
@@ -562,36 +560,56 @@ class Program {
         void cleanAllRules();
 
         VLIBEXP void addRule(std::vector<Literal> heads,
-                std::vector<Literal> body, bool rewriteMultihead = false);
+                std::vector<Literal> body) {
+            addRule(heads, body, false, false);
+        }
+
+        VLIBEXP void addRule(std::vector<Literal> heads,
+                std::vector<Literal> body, bool rewriteMultihead, bool isEGD);
 
         void addAllRules(std::vector<Rule> &rules);
 
-        VLIBEXP bool isPredicateIDB(const PredId_t id);
+        VLIBEXP bool isPredicateIDB(const PredId_t id) const;
 
-        std::string getAllPredicates();
+        std::string getAllPredicates() const;
 
-        std::vector<std::string> getAllPredicateStrings();
+        std::vector<std::string> getAllPredicateStrings() const;
 
-        int getNEDBPredicates();
+        int getNEDBPredicates() const;
 
-        int getNIDBPredicates();
+        int getNIDBPredicates() const;
+
+        std::string tostring() const;
+
+        VLIBEXP bool areExistentialRules() const;
 
         int getNPredicates() {
             return rules.size();
         }
 
-        std::string tostring();
-
-        VLIBEXP bool areExistentialRules();
+        static std::string rewriteRDFOWLConstants(std::string input);
 
         static std::string compressRDFOWLConstants(std::string input);
 
+        // Should be const
         VLIBEXP std::vector<PredId_t> getAllEDBPredicateIds();
 
-        // Returns true if stratification succeeded, and then stores the stratification in the parameter.
-        // The result vector is indexed by predicate id, and then gives the stratification class.
+        uint8_t getPredicateCard(PredId_t pred) {
+            return cardPredicates[pred];
+        }
+
+        VLIBEXP std::vector<PredId_t> getAllIDBPredicateIds();
+        //
+        // Returns true if stratification succeeded, and then stores the
+        // stratification in the parameter.
+        // The result vector is indexed by predicate id, and then gives the
+        // stratification class.
         // The number of stratification classes is also returned.
         bool stratify(std::vector<int> &stratification, int &nStatificationClasses);
+
+        VLIBEXP void axiomatizeEquality();
+
+        VLIBEXP void singulariseEquality();
 
         ~Program() {
         }

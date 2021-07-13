@@ -24,6 +24,19 @@ EDBConf::EDBConf(std::string rawcontent, bool isFile) {
     parse(rawcontent);
 }
 
+void EDBConf::setRootPath(std::string path) {
+    if (Utils::isDirectory(path)) {
+        this->rootPath = path;
+    } else {
+        LOG(DEBUGL) << "setRootPath not called with a directory; replacing with '.'";
+        this->rootPath = ".";
+    }
+}
+
+std::string EDBConf::getRootPath() const {
+    return rootPath;
+}
+
 void EDBConf::parse(std::string f) {
     std::stringstream reader(f);
     std::string line;

@@ -7,7 +7,7 @@
 
 #include <vlog/seminaiver.h>
 #include <vlog/trident/tridenttable.h>
-
+#include <vlog/reasoner.h>
 #include <layers/TridentLayer.hpp>
 
 #include <trident/kb/kb.h>
@@ -99,6 +99,32 @@ class WebInterface {
         }
 
         static std::string lookup(std::string sId, DBLayer &db);
+
+        static void execSPARQLQuery(std::string sparqlquery,
+                bool explain,
+                long nterms,
+                DBLayer &db,
+                bool printstdout,
+                bool jsonoutput,
+                JSON *jsonvars,
+                JSON *jsonresults,
+                JSON *jsonstats);
+
+        static void execLiteralQuery(std::string& literalquery,
+                EDBLayer &edb,
+                Program &p,
+                bool jsonoutput,
+                JSON *jsonresults,
+                JSON *jsonFeatures,
+                JSON *jsonQsqrTime,
+                JSON *jsonMagicTime);
+        static double runAlgo(std::string& algo,
+                Reasoner& reasoner,
+                EDBLayer& edb,
+                Program& p,
+                Literal& literal,
+                std::stringstream& ss,
+                uint64_t timeoutMillis);
 };
 #endif
 #endif

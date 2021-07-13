@@ -86,16 +86,6 @@ void RuleExecutionPlan::calculateJoinsCoordinates(const std::vector<Literal> &he
         std::vector<std::pair<uint8_t, uint8_t>> ps;
         std::vector<Var_t> newExistingVariables;
 
-        //Should I copy all the previous variables
-        /*if (copyAllVars) {
-        //Update pf
-        newExistingVariables = existingVariables;
-        int idx = 0;
-        for(const auto &p : existingVariables) {
-        pf.push_back(std::make_pair(idx, idx));
-        idx += 1;
-        }
-        } else */
         if (i == (plan.size() - 1)) {
             //No need to store any new variable. Just copy the old ones in the head
             //if the variables in "existingVariables" are needed for the head, then
@@ -256,6 +246,5 @@ void RuleExecutionPlan::calculateJoinsCoordinates(const std::vector<Literal> &he
         posFromFirst.push_back(pf);
         posFromSecond.push_back(ps);
     }
-
 }
 

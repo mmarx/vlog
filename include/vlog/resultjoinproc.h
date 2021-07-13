@@ -58,6 +58,7 @@ class ResultJoinProcessor {
         size_t rowCount;
 #endif
         const bool ignoreDupElimin;
+        uint64_t triggers;
 
     protected:
         virtual void processResults(const int blockid,
@@ -95,8 +96,9 @@ class ResultJoinProcessor {
             nCopyFromFirst(nCopyFromFirst),
             nCopyFromSecond(nCopyFromSecond),
             nthreads(nthreads),
-            ignoreDupElimin(ignoreDupElimin) {
-                for (int i = 0; i < nCopyFromFirst; ++i) {
+            ignoreDupElimin(ignoreDupElimin),
+            triggers(0) {
+                for (uint8_t i = 0; i < nCopyFromFirst; ++i) {
                     this->posFromFirst[i] = posFromFirst[i];
                 }
                 for (int i = 0; i < nCopyFromSecond; ++i) {
@@ -159,6 +161,10 @@ class ResultJoinProcessor {
             return row;
         }
 
+        uint64_t getTriggers() {
+            return triggers;
+        }
+
         uint8_t getNCopyFromSecond() const {
             return nCopyFromSecond;
         }
@@ -175,7 +181,7 @@ class ResultJoinProcessor {
             return posFromFirst;
         }
 
-        virtual void consolidate(const bool isFinished) {}
+        virtual bool consolidate(const bool isFinished) { return false; }
 
         virtual ~ResultJoinProcessor() {
             if (deleteRow)
@@ -276,7 +282,7 @@ class InterTableJoinProcessor: public ResultJoinProcessor {
             throw 10;
         }
 
-        void consolidate(const bool isFinished);
+        bool consolidate(const bool isFinished);
 
         bool isBlockEmpty(const int blockId, const bool unique) const;
 

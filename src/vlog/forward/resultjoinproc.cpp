@@ -126,6 +126,10 @@ void InterTableJoinProcessor::processResults(const int blockid,
         row[posFromFirst[i].first] = (*vectors1[posFromFirst[i].second])[i1];
     }
     for (int i = 0; i < nCopyFromSecond; i++) {
+        assert(i < MAX_MAPPINGS);
+        // assert(posFromSecond[i].first < row.size());
+        assert(posFromSecond[i].second < vectors2.size());
+        assert(i2 < (*vectors2[posFromSecond[i].second]).size());
         row[posFromSecond[i].first] = (*vectors2[posFromSecond[i].second])[i2];
     }
     /*//Calculate hashcode from the two arrays.
@@ -197,7 +201,7 @@ bool InterTableJoinProcessor::isEmpty() const {
     return segments[blockId] == NULL ? 0 : segments[blockId]->getNRows();
 }*/
 
-void InterTableJoinProcessor::consolidate(const bool isFinished) {
+bool InterTableJoinProcessor::consolidate(const bool isFinished) {
     //Add the segment to the table
     //LOG(DEBUGL) << "InterTableJoinProcessor::consolidate: currentSegmentSize = " << currentSegmentSize;
     //LOG(DEBUGL) << "  rowsize = " << (int)rowsize;
@@ -251,6 +255,7 @@ void InterTableJoinProcessor::consolidate(const bool isFinished) {
     }
     */
     //LOG(DEBUGL) << "InterTableJoinProcessor::consolidate done";
+    return false;
 }
 
 std::shared_ptr<const FCInternalTable> InterTableJoinProcessor::getTable() {

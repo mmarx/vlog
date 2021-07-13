@@ -35,7 +35,6 @@ public:
     void addRule(std::string rule);
     void addFacts(std::string predicate, std::vector<std::vector<std::string>> data);
     void materialize(bool skolem = false, unsigned long timeout = 0);
-    void logEDBLayer();
     std::vector<std::vector<std::string>> query(std::string query);
     API();
     ~API();

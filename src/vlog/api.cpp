@@ -33,7 +33,7 @@ void log(std::string msg){
     
 void API::addRule(std::string rule){
     log("  API::addRule: start");
-    std::string result = program->parseRule(rule,false);
+    std::string result = program->parseRule(rule, false);
     log("  API::addRule: " + result);
     log("  API::addRule: end");
 }
@@ -44,10 +44,6 @@ void API::addFacts(std::string predicate, std::vector<std::vector<std::string>> 
     layer->addInmemoryTable(predicate, data);
 }
 
-void API::logEDBLayer(){
-    layer->log();
-}
-    
 void API::materialize(bool skolem, unsigned long timeout){
     log("  API::materialize: start");
     log("  API::materialize: number of rules: " + std::to_string(program->getAllRules().size()));
@@ -95,7 +91,7 @@ std::vector<std::vector<std::string>> API::query(std::string query) {
         std::shared_ptr<TupleTable> pt(table);
         iter = new TupleTableItr(pt);
     }
-    // do something with the iterator
+
     log("  API:query: iterating");
     while(iter->hasNext()){
         log("  API:query: iterating ...");
@@ -103,7 +99,7 @@ std::vector<std::vector<std::string>> API::query(std::string query) {
         std::vector<std::string> row;
         for (uint8_t i = 0; i< iter->getTupleSize(); i++)
             row.push_back(layer->getDictText(iter->getElementAt(i)));
-        result.push_back(row); //!!! does not work either
+        result.push_back(row);
     }
     log("  API::query: end");
     return result;
@@ -120,15 +116,15 @@ API::~API(){
     if (layer != NULL) {
         delete layer;
         layer = NULL;
-    }   
+    }
     if (program != NULL) {
         delete program;
         program = NULL;
-    }   
+    }
     if (sn != NULL) {
-        delete sn; 
+        delete sn;
         sn = NULL;
-    } 
+    }
 }
 
 /*
@@ -206,4 +202,3 @@ VTerm API::getVLogTerm(std::string term, Dictionary &variables){
     log("  API::getVLogTerm: end");
     return result;
 }
-

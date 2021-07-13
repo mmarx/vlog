@@ -780,6 +780,100 @@ TupleIterator *Reasoner::getIteratorWithMaterialization(SemiNaiver *sn, Literal 
     }
 }
 
+int Reasoner::getNumberOfIDBPredicates(Literal &query, Program &program) {
+    int count = 0;
+    std::vector<Rule> rules;
+    int idxRules = 0;
+
+    std::unordered_set<Term_t> setQueries;
+    std::vector<Literal> queries;
+    int idxQueries = 0;
+    queries.push_back(query);
+    Term_t key = (query.getPredicate().getId() << 16) + query.getPredicate().getAdornment();
+    setQueries.insert(key);
+
+    while (idxQueries < queries.size()) {
+        Literal lit = queries[idxQueries];
+
+        //Go through all rules and get the ones which match the query
+        std::vector<Rule> r = program.getAllRulesByPredicate(lit.getPredicate().getId());
+        for (std::vector<Rule>::iterator itr = r.begin(); itr != r.end();
+                ++itr) {
+            rules.push_back(itr->createAdornment(lit.getPredicate().getAdornment()));
+        }
+
+        //Go through all the new rules and get new queries to process
+        while (idxRules < rules.size()) {
+            Rule *r = &rules[idxRules];
+            for (std::vector<Literal>::const_iterator itr = r->getBody().begin();
+                    itr != r->getBody().end(); ++itr) {
+                Predicate pred = itr->getPredicate();
+                if (pred.getType() == IDB) {
+                    count++;
+                    Term_t key = (pred.getId() << 16) + pred.getAdornment();
+                    if (setQueries.find(key) == setQueries.end()) {
+                        setQueries.insert(key);
+                        queries.push_back(*itr);
+                    }
+                }
+            }
+            idxRules++;
+        }
+        idxQueries++;
+    }
+
+    return count;
+}
+
+void Reasoner::getMetrics(Literal &query, std::vector<uint8_t> *posBindings, std::vector<Term_t> *valueBindings,
+	    EDBLayer &layer, Program &program, Metrics &metrics, int maxDepth, string& idbFeatures) {
+    std::unique_ptr<QSQR> evaluator = std::unique_ptr<QSQR>(
+            new QSQR(layer, &program));
+    memset(&metrics, 0, sizeof(Metrics));
+    std::vector<uint32_t> uniqueRules;
+    vector<PredId_t> idbIds;
+    evaluator->estimateQuery(metrics, maxDepth, query, uniqueRules, idbIds);
+    vector<PredId_t> allPredIds =  program.getAllPredicateIDs();
+    uint32_t countPreds = allPredIds.size();
+
+    uint8_t card = query.getPredicate().getCardinality();
+    bool sub_bound = false;
+    bool obj_bound = false;
+    for (uint8_t c = 0; c < card; ++c) {
+        bool bound = !query.getTermAtPos(c).isVariable();
+        if (0 == c) {
+            sub_bound = bound;
+        } else if (1 == c) {
+            obj_bound = bound;
+        }
+    }
+    if (1 == card) {
+        obj_bound = sub_bound;
+    }
+
+    int i = 0;
+    stringstream ss;
+    ss << (sub_bound ? "1" : "0");
+    ss << ",";
+    ss << (obj_bound ? "1" : "0");
+    ss << ",";
+    for (auto pid : allPredIds) {
+        auto it = std::find(idbIds.begin(), idbIds.end(), pid);
+        if (it != idbIds.end()) {
+            // found
+            ss << "1";
+        } else {
+            ss << "0";
+        }
+        if (i < countPreds-1){
+            ss << ",";
+        }
+        i += 1;
+    }
+    idbFeatures = ss.str();
+    metrics.countUniqueRules = uniqueRules.size();
+}
+
 ReasoningMode Reasoner::chooseMostEfficientAlgo(Literal &query,
         EDBLayer &layer, Program &program,
         std::vector<uint8_t> *posBindings,
@@ -919,40 +1013,41 @@ TupleIterator *Reasoner::getTopDownIterator(Literal &query,
 std::shared_ptr<SemiNaiver> Reasoner::getSemiNaiver(EDBLayer &layer,
         Program *p, bool opt_intersect, bool opt_filtering, bool opt_threaded,
         TypeChase typeChase,
-        int nthreads, int interRuleThreads, bool shuffleRules, Program *restrictedCheck) {
+        int nthreads, int interRuleThreads, bool shuffleRules, Program *restrictedCheck,
+        std::string sameasAlgo) {
     LOG(DEBUGL) << "interRuleThreads = " << interRuleThreads << ", shuffleRules = " << shuffleRules;
     if (interRuleThreads > 0 && restrictedCheck == NULL) {
         std::shared_ptr<SemiNaiver> sn(new SemiNaiverThreaded(
                     layer, p, opt_intersect, opt_filtering,
-                    shuffleRules, nthreads, interRuleThreads));
+                    shuffleRules, nthreads, interRuleThreads, sameasAlgo));
         return sn;
     } else {
         std::shared_ptr<SemiNaiver> sn(new SemiNaiver(
                     layer, p, opt_intersect, opt_filtering,
-                    opt_threaded, typeChase, nthreads, shuffleRules, false, restrictedCheck));
+                    opt_threaded, typeChase, nthreads, shuffleRules, false, restrictedCheck, sameasAlgo));
         return sn;
     }
 }
 
 std::shared_ptr<TriggerSemiNaiver> Reasoner::getTriggeredSemiNaiver(EDBLayer &layer,
         Program *p,
-        bool restrictedChase) {
+        TypeChase chase) {
     std::shared_ptr<TriggerSemiNaiver> sn(new TriggerSemiNaiver(
-                layer, p, restrictedChase));
+                layer, p, chase));
     return sn;
 }
 
 /*std::shared_ptr<SemiNaiver> Reasoner::fullMaterialization(EDBLayer &layer,
-        Program *p, bool opt_intersect, bool opt_filtering, bool opt_threaded,
-        bool restrictedChase, int nthreads, int interRuleThreads, bool shuffleRules) {
-    LOG(INFOL) << "Starting full materialization";
-    std::chrono::system_clock::time_point start = std::chrono::system_clock::now();
-    std::shared_ptr<SemiNaiver> sn = getSemiNaiver(layer,
-            p, opt_intersect, opt_filtering, opt_threaded,
-            restrictedChase, nthreads, interRuleThreads, shuffleRules);
-    sn->run();
-    std::chrono::duration<double> sec = std::chrono::system_clock::now() - start;
-    LOG(INFOL) << "Runtime materialization = " << sec.count() * 1000 << " milliseconds";
-    sn->printCountAllIDBs("");
-    return sn;
-}*/
+  Program *p, bool opt_intersect, bool opt_filtering, bool opt_threaded,
+  bool restrictedChase, int nthreads, int interRuleThreads, bool shuffleRules) {
+  LOG(INFOL) << "Starting full materialization";
+  std::chrono::system_clock::time_point start = std::chrono::system_clock::now();
+  std::shared_ptr<SemiNaiver> sn = getSemiNaiver(layer,
+  p, opt_intersect, opt_filtering, opt_threaded,
+  restrictedChase, nthreads, interRuleThreads, shuffleRules);
+  sn->run();
+  std::chrono::duration<double> sec = std::chrono::system_clock::now() - start;
+  LOG(INFOL) << "Runtime materialization = " << sec.count() * 1000 << " milliseconds";
+  sn->printCountAllIDBs("");
+  return sn;
+  }*/
