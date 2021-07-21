@@ -265,7 +265,7 @@ if(JAVA)
 ENDIF()
 TARGET_LINK_LIBRARIES(vlog vlog-core)
 
-add_library(api src/vlog/api.cpp)
+add_library(api STATIC src/vlog/api.cpp)
 target_link_libraries(api vlog-core)
 
 add_executable(exp01 src/apiexamples/exp01.cpp)
