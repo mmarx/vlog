@@ -24,3 +24,11 @@ testOutput
 .project
 .settings
 *.swp
+**/*.csv
+**/*.datalog
+**/*.ipynb
+**/*.stats
+**/*.conf
+experiments/*
+*~
+#*#
