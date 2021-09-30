@@ -245,6 +245,7 @@ ENDIF()
 #Create both a library and the executable program
 add_library(vlog-o OBJECT ${vlog_SRC})
 add_dependencies(vlog-o git-trident)
+set_target_properties(vlog-o PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS}")
 add_library(vlog-core SHARED $<TARGET_OBJECTS:vlog-o>)
 # also create a static version
 IF(STATIC_API)
