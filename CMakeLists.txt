@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.8.13)
+cmake_minimum_required (VERSION 3.19)
 
 option(STATIC_API "Build static version of the API" OFF)
 
@@ -105,6 +105,7 @@ ELSE()
         add_library(trident SHARED IMPORTED)
         add_library(trident-static STATIC IMPORTED)
         add_dependencies(trident git-trident)
+        add_dependencies(trident-static git-trident)
         set_property(TARGET trident PROPERTY IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/trident/libtrident-core${CMAKE_SHARED_LIBRARY_SUFFIX}")
         set_property(TARGET trident-static PROPERTY IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/trident/libtrident-static${CMAKE_STATIC_LIBRARY_SUFFIX}")
         LINK_DIRECTORIES("${CMAKE_BINARY_DIR}/trident/")
@@ -125,6 +126,7 @@ ELSE()
         LINK_DIRECTORIES("${KOGNAC_LIB}")
         set_property(TARGET kognac-core PROPERTY IMPORTED_LOCATION ${KOGNAC_LIB}/${CMAKE_SHARED_LIBRARY_PREFIX}kognac-core${CMAKE_SHARED_LIBRARY_SUFFIX})
         set_property(TARGET kognac-static PROPERTY IMPORTED_LOCATION ${KOGNAC_LIB}/${CMAKE_STATIC_LIBRARY_PREFIX}kognac-static${CMAKE_STATIC_LIBRARY_SUFFIX})
+        find_library(ZLIB_STATIC ${CMAKE_STATIC_LIBRARY_PREFIX}z${CMAKE_STATIC_LIBRARY_SUFFIX})
     ELSE()
         ExternalProject_Add(git-trident
             DOWNLOAD_COMMAND git clone https://github.com/karmaresearch/trident.git
@@ -336,8 +338,49 @@ target_link_libraries(exp01 api)
 
 IF(STATIC_API)
     add_library(api-static STATIC src/vlog/api.cpp)
-    target_link_libraries(api-static vlog-static trident-static trident-sparql-static kognac-static lz4 -static -pthread)
+    set(combined_lib "${CMAKE_BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}api-fat${CMAKE_STATIC_LIBRARY_SUFFIX}")
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/fat)
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/fat/vlog)
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/fat/trident)
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/fat/trident-sparql)
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/fat/kognac)
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/fat/lz4)
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/fat/z)
+
+    add_custom_target(combined-vlog
+        COMMAND ar -x $<TARGET_FILE:vlog-static>
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/fat/vlog
+        DEPENDS vlog-static)
+    add_custom_target(combined-trident
+        COMMAND ar -x $<TARGET_FILE:trident-static>
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/fat/trident
+        DEPENDS trident-static)
+    add_custom_target(combined-trident-sparql
+        COMMAND ar -x $<TARGET_FILE:trident-sparql-static>
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/fat/trident-sparql
+        DEPENDS trident-sparql-static)
+    add_custom_target(combined-kognac
+        COMMAND ar -x $<TARGET_FILE:kognac-static>
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/fat/kognac
+        DEPENDS kognac-static)
+    add_custom_target(combined-lz4
+        COMMAND ar -x $<TARGET_FILE:lz4>
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/fat/lz4
+        DEPENDS lz4)
+    add_custom_target(combined-z
+        COMMAND ar -x ${ZLIB_STATIC}
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/fat/z)
+
+    add_custom_target(combined
+        COMMAND ar -qcs ${combined_lib} vlog/*.o trident/*.o trident-sparql/*.o kognac/*.o lz4/*.o z/*.o
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/fat
+        DEPENDS combined-vlog combined-trident combined-trident-sparql combined-kognac combined-lz4 combined-z)
+    add_library(api-fat STATIC IMPORTED GLOBAL)
+    add_dependencies(api-fat combined)
+    set_target_properties(api-fat PROPERTIES IMPORTED_LOCATION ${combined_lib})
+    target_link_libraries(api-static vlog-static trident-sparql-static trident-static kognac-static lz4 -static -pthread)
+    target_link_libraries(api-fat INTERFACE -static -pthread)
 
     add_executable(exp01-static src/apiexamples/exp01.cpp)
-    target_link_libraries(exp01-static api-static)
+    target_link_libraries(exp01-static api-fat)
 ENDIF()
