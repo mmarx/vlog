@@ -25,13 +25,15 @@
             pkgs.zlib.out
             pkgs.zlib.dev
             pkgs.zlib.static
+            pkgs.glibc.out
+            pkgs.glibc.static
+
           ];
           nativeBuildInputs = [
             pkgs.gcc
             pkgs.gdb
             pkgs.cmake
             pkgs.cmakeCurses
-            pkgs.glibc.static
           ];
         };
       });
