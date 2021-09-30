@@ -366,7 +366,7 @@ IF(STATIC_API)
     add_custom_target(combined-lz4
         COMMAND ar -x $<TARGET_FILE:lz4>
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/fat/lz4
-        DEPENDS lz4)
+        DEPENDS kognac-static lz4)
     add_custom_target(combined-z
         COMMAND ar -x ${ZLIB_STATIC}
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/fat/z)
