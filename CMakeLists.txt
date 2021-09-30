@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 2.8.13)
 
-option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
+option(STATIC_API "Build static version of the API" OFF)
 
 set(CMAKE_C_COMPILER "gcc")
 set(CMAKE_CXX_COMPILER "g++")
@@ -88,34 +88,73 @@ IF(TRIDENT_LIB)
     set_property(TARGET trident-sparql PROPERTY IMPORTED_LOCATION ${TRIDENT_LIB}/libtrident-sparql${CMAKE_SHARED_LIBRARY_SUFFIX})
     LINK_DIRECTORIES("${TRIDENT_LIB}/")
 ELSE()
-    ExternalProject_Add(git-trident
-        DOWNLOAD_COMMAND git clone https://github.com/karmaresearch/trident.git
-        DOWNLOAD_DIR .
-        SOURCE_DIR trident
-        BUILD_IN_SOURCE 1
-        CMAKE_ARGS "-DSPARQL=1" "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
-        INSTALL_COMMAND ""
-        )
-    ExternalProject_Get_Property(git-trident SOURCE_DIR)
-    include_directories(${SOURCE_DIR}/include)
-    include_directories(${SOURCE_DIR}/include/layers)
-    include_directories(${SOURCE_DIR}/rdf3x/include)
-    # TRIDENT
-    add_library(trident SHARED IMPORTED)
-    add_dependencies(trident git-trident)
-    set_property(TARGET trident PROPERTY IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/trident/libtrident-core${CMAKE_SHARED_LIBRARY_SUFFIX}")
-    LINK_DIRECTORIES("${CMAKE_BINARY_DIR}/trident/")
-    # TRIDENT SPARQL
-    add_library(trident-sparql SHARED IMPORTED)
-    add_dependencies(trident-sparql git-trident)
-    set_property(TARGET trident-sparql PROPERTY IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/trident/libtrident-sparql${CMAKE_SHARED_LIBRARY_SUFFIX}")
-    # KOGNAC
-    set(KOGNAC_LIB ${CMAKE_BINARY_DIR}/trident/kognac)
-    add_library(kognac-core SHARED IMPORTED)
-    add_dependencies(kognac-core git-trident)
-    include_directories(${SOURCE_DIR}/kognac/include)
-    LINK_DIRECTORIES("${KOGNAC_LIB}")
-    set_property(TARGET kognac-core PROPERTY IMPORTED_LOCATION ${KOGNAC_LIB}/${CMAKE_SHARED_LIBRARY_PREFIX}kognac-core${CMAKE_SHARED_LIBRARY_SUFFIX})
+    IF(STATIC_API)
+        ExternalProject_Add(git-trident
+            DOWNLOAD_COMMAND git clone https://github.com/mmarx/trident.git
+            DOWNLOAD_DIR .
+            SOURCE_DIR trident
+            BUILD_IN_SOURCE 1
+            CMAKE_ARGS "-DSPARQL=1" "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}" "-DSTATIC_LIBS=1"
+            INSTALL_COMMAND ""
+            )
+        ExternalProject_Get_Property(git-trident SOURCE_DIR)
+        include_directories(${SOURCE_DIR}/include)
+        include_directories(${SOURCE_DIR}/include/layers)
+        include_directories(${SOURCE_DIR}/rdf3x/include)
+        # TRIDENT
+        add_library(trident SHARED IMPORTED)
+        add_library(trident-static STATIC IMPORTED)
+        add_dependencies(trident git-trident)
+        set_property(TARGET trident PROPERTY IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/trident/libtrident-core${CMAKE_SHARED_LIBRARY_SUFFIX}")
+        set_property(TARGET trident-static PROPERTY IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/trident/libtrident-static${CMAKE_STATIC_LIBRARY_SUFFIX}")
+        LINK_DIRECTORIES("${CMAKE_BINARY_DIR}/trident/")
+        # TRIDENT SPARQL
+        add_library(trident-sparql SHARED IMPORTED)
+        add_library(trident-sparql-static STATIC IMPORTED)
+        add_dependencies(trident-sparql git-trident)
+        add_dependencies(trident-sparql-static git-trident)
+        set_property(TARGET trident-sparql PROPERTY IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/trident/libtrident-sparql${CMAKE_SHARED_LIBRARY_SUFFIX}")
+        set_property(TARGET trident-sparql-static PROPERTY IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/trident/libtrident-sparql-static${CMAKE_STATIC_LIBRARY_SUFFIX}")
+        # KOGNAC
+        set(KOGNAC_LIB ${CMAKE_BINARY_DIR}/trident/kognac)
+        add_library(kognac-core SHARED IMPORTED)
+        add_library(kognac-static STATIC IMPORTED)
+        add_dependencies(kognac-core git-trident)
+        add_dependencies(kognac-static git-trident)
+        include_directories(${SOURCE_DIR}/kognac/include)
+        LINK_DIRECTORIES("${KOGNAC_LIB}")
+        set_property(TARGET kognac-core PROPERTY IMPORTED_LOCATION ${KOGNAC_LIB}/${CMAKE_SHARED_LIBRARY_PREFIX}kognac-core${CMAKE_SHARED_LIBRARY_SUFFIX})
+        set_property(TARGET kognac-static PROPERTY IMPORTED_LOCATION ${KOGNAC_LIB}/${CMAKE_STATIC_LIBRARY_PREFIX}kognac-static${CMAKE_STATIC_LIBRARY_SUFFIX})
+    ELSE()
+        ExternalProject_Add(git-trident
+            DOWNLOAD_COMMAND git clone https://github.com/karmaresearch/trident.git
+            DOWNLOAD_DIR .
+            SOURCE_DIR trident
+            BUILD_IN_SOURCE 1
+            CMAKE_ARGS "-DSPARQL=1" "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
+            INSTALL_COMMAND ""
+            )
+        ExternalProject_Get_Property(git-trident SOURCE_DIR)
+        include_directories(${SOURCE_DIR}/include)
+        include_directories(${SOURCE_DIR}/include/layers)
+        include_directories(${SOURCE_DIR}/rdf3x/include)
+        # TRIDENT
+        add_library(trident SHARED IMPORTED)
+        add_dependencies(trident git-trident)
+        set_property(TARGET trident PROPERTY IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/trident/libtrident-core${CMAKE_SHARED_LIBRARY_SUFFIX}")
+        LINK_DIRECTORIES("${CMAKE_BINARY_DIR}/trident/")
+        # TRIDENT SPARQL
+        add_library(trident-sparql SHARED IMPORTED)
+        add_dependencies(trident-sparql git-trident)
+        set_property(TARGET trident-sparql PROPERTY IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/trident/libtrident-sparql${CMAKE_SHARED_LIBRARY_SUFFIX}")
+        # KOGNAC
+        set(KOGNAC_LIB ${CMAKE_BINARY_DIR}/trident/kognac)
+        add_library(kognac-core SHARED IMPORTED)
+        add_dependencies(kognac-core git-trident)
+        include_directories(${SOURCE_DIR}/kognac/include)
+        LINK_DIRECTORIES("${KOGNAC_LIB}")
+        set_property(TARGET kognac-core PROPERTY IMPORTED_LOCATION ${KOGNAC_LIB}/${CMAKE_SHARED_LIBRARY_PREFIX}kognac-core${CMAKE_SHARED_LIBRARY_SUFFIX})
+    ENDIF()
 ENDIF()
 
 #SPARSEHASH
@@ -202,20 +241,36 @@ IF(JAVA)
 ENDIF()
 
 #Create both a library and the executable program
-add_library(vlog-core SHARED ${vlog_SRC})
+add_library(vlog-o OBJECT ${vlog_SRC})
+add_dependencies(vlog-o git-trident)
+add_library(vlog-core SHARED $<TARGET_OBJECTS:vlog-o>)
+# also create a static version
+IF(STATIC_API)
+    add_library(vlog-static STATIC $<TARGET_OBJECTS:vlog-o>)
+ENDIF()
 add_executable(vlog src/launcher/main.cpp)
 
 IF(SPARQL)
     target_link_libraries(vlog-core ${CURL_LIBRARIES})
+    IF(STATIC_API)
+        target_link_libraries(vlog-static ${CURL_LIBRARIES})
+    ENDIF()
 ENDIF()
 
 #PTHREADS
 find_package(Threads REQUIRED)
 if (THREADS_HAVE_PTHREAD_ARG)
     target_compile_options(PUBLIC vlog-core "-pthread")
+    IF(STATIC_API)
+        target_compile_options(PUBLIC vlog-static "-pthread")
+        target_compile_options(PUBLIC vlog-api "-pthread")
+    ENDIF()
 endif()
 if (CMAKE_THREAD_LIBS_INIT)
     target_link_libraries(vlog-core "${CMAKE_THREAD_LIBS_INIT}")
+    IF(STATIC_API)
+        target_link_libraries(vlog-static "${CMAKE_THREAD_LIBS_INIT}")
+    ENDIF()
 endif()
 
 #Set compiler options
@@ -238,6 +293,9 @@ IF (JAVA)
     set(COMPILE_FLAGS "${COMPILE_FLAGS} -fPIC")
 ENDIF()
 set_target_properties(vlog-core PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS}")
+IF(STATIC_API)
+    set_target_properties(vlog-static PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS}")
+ENDIF()
 IF(JAVA)
     set_target_properties(vlog-java PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS}")
 ENDIF()
@@ -246,6 +304,9 @@ set_target_properties(vlog PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS}" OUTPUT_NA
 #standard include
 include_directories(include/)
 TARGET_LINK_LIBRARIES(vlog-core trident trident-sparql ${ZLIB_LIBRARIES} kognac-core lz4)
+IF(STATIC_API)
+    TARGET_LINK_LIBRARIES(vlog-static trident-static trident-sparql-static kognac-static ${ZLIB_LIBRARIES} lz4)
+ENDIF()
 
 if(JAVA)
     file(GLOB javaSRC "src/vlog/java/karmaresearch/vlog/*.java")
@@ -267,9 +328,16 @@ if(JAVA)
 ENDIF()
 TARGET_LINK_LIBRARIES(vlog vlog-core)
 
-add_library(api STATIC src/vlog/api.cpp)
-target_link_libraries(api vlog-core)
+add_library(api SHARED src/vlog/api.cpp)
+target_link_Libraries(api vlog-core)
 
 add_executable(exp01 src/apiexamples/exp01.cpp)
 target_link_libraries(exp01 api)
 
+IF(STATIC_API)
+    add_library(api-static STATIC src/vlog/api.cpp)
+    target_link_libraries(api-static vlog-static trident-static trident-sparql-static kognac-static lz4)
+
+    add_executable(exp01-static src/apiexamples/exp01.cpp)
+    target_link_libraries(exp01-static api-static)
+ENDIF()
