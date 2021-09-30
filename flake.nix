@@ -22,6 +22,7 @@
             pkgs.zlib
             pkgs.lz4
             pkgs.sparsehash
+            pkgs.zlib.static
           ];
           nativeBuildInputs = [
             pkgs.gcc
