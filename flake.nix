@@ -19,9 +19,11 @@
       {
         devShell = pkgs.mkShell {
           buildInputs = [
-            pkgs.zlib
+            pkgs.curl
             pkgs.lz4
             pkgs.sparsehash
+            pkgs.zlib.out
+            pkgs.zlib.dev
             pkgs.zlib.static
           ];
           nativeBuildInputs = [
@@ -29,6 +31,7 @@
             pkgs.gdb
             pkgs.cmake
             pkgs.cmakeCurses
+            pkgs.glibc.static
           ];
         };
       });

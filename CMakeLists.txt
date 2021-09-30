@@ -336,7 +336,7 @@ target_link_libraries(exp01 api)
 
 IF(STATIC_API)
     add_library(api-static STATIC src/vlog/api.cpp)
-    target_link_libraries(api-static vlog-static trident-static trident-sparql-static kognac-static lz4)
+    target_link_libraries(api-static vlog-static trident-static trident-sparql-static kognac-static lz4 -static -pthread)
 
     add_executable(exp01-static src/apiexamples/exp01.cpp)
     target_link_libraries(exp01-static api-static)
