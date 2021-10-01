@@ -68,6 +68,9 @@ file(GLOB vlog_SRC
     )
 
 #ZLIB
+IF(STATIC_API)
+    find_library(ZLIB_STATIC ${CMAKE_STATIC_LIBRARY_PREFIX}z${CMAKE_STATIC_LIBRARY_SUFFIX})
+ENDIF()
 find_package(ZLIB REQUIRED)
 
 #Trident
@@ -126,7 +129,6 @@ ELSE()
         LINK_DIRECTORIES("${KOGNAC_LIB}")
         set_property(TARGET kognac-core PROPERTY IMPORTED_LOCATION ${KOGNAC_LIB}/${CMAKE_SHARED_LIBRARY_PREFIX}kognac-core${CMAKE_SHARED_LIBRARY_SUFFIX})
         set_property(TARGET kognac-static PROPERTY IMPORTED_LOCATION ${KOGNAC_LIB}/${CMAKE_STATIC_LIBRARY_PREFIX}kognac-static${CMAKE_STATIC_LIBRARY_SUFFIX})
-        find_library(ZLIB_STATIC ${CMAKE_STATIC_LIBRARY_PREFIX}z${CMAKE_STATIC_LIBRARY_SUFFIX})
     ELSE()
         ExternalProject_Add(git-trident
             DOWNLOAD_COMMAND git clone https://github.com/karmaresearch/trident.git
