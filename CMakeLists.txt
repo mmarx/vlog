@@ -308,7 +308,7 @@ set_target_properties(vlog PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS}" OUTPUT_NA
 include_directories(include/)
 TARGET_LINK_LIBRARIES(vlog-core trident trident-sparql ${ZLIB_LIBRARIES} kognac-core lz4)
 IF(STATIC_API)
-    TARGET_LINK_LIBRARIES(vlog-static trident-static trident-sparql-static kognac-static ${ZLIB_LIBRARIES} lz4)
+    TARGET_LINK_LIBRARIES(vlog-static trident-static trident-sparql-static kognac-static ${ZLIB_STATIC} lz4)
 ENDIF()
 
 if(JAVA)
