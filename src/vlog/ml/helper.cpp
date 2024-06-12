@@ -5,6 +5,7 @@
 #include <sstream>
 #include <iostream>
 #include <ctime>
+#include <cstdint>
 #include <vlog/ml/helper.h>
 
 using namespace std;

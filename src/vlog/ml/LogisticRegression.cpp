@@ -5,6 +5,7 @@
 #include <vlog/ml/LogisticRegression.h>
 #include <cstdlib>
 #include <cassert>
+#include <cstdint>
 #include <vlog/ml/helper.h>
 
 using namespace std;
